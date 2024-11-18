@@ -4,14 +4,15 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
+    assetsDir: 'assets',
     rollupOptions: {
-      external: [
-        'pdfjs-dist/build/pdf.worker.entry'
-      ],
       output: {
         manualChunks: {
           pdfjs: ['pdfjs-dist']
-        }
+        },
+        entryFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name].[ext]'
       }
     }
   },
@@ -23,5 +24,9 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin'
     }
-  }
+  },
+  resolve: {
+    extensions: ['.js', '.ts', '.jsx', '.tsx', '.json'],
+  },
+  base: '/'
 });
