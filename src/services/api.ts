@@ -1,4 +1,28 @@
-const submitToCaspio = async (data: ExtractedData) => {
+import { ExtractedData } from '../types';
+import { parsePDF } from './pdfParser';
+import { toast } from 'react-hot-toast';
+
+export const extractPdfData = async (file: File): Promise<ExtractedData> => {
+  try {
+    if (!file) {
+      throw new Error('No file provided');
+    }
+    
+    const extractedData = await parsePDF(file);
+    
+    if (!extractedData) {
+      throw new Error('Failed to extract data from PDF');
+    }
+    
+    return extractedData;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to extract data from PDF';
+    toast.error(errorMessage);
+    throw new Error(errorMessage);
+  }
+};
+
+export const submitToCaspio = async (data: ExtractedData) => {
   try {
     const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
     const apiKey = import.meta.env.VITE_CASPIO_API_KEY;
@@ -34,12 +58,14 @@ const submitToCaspio = async (data: ExtractedData) => {
     });
 
     if (!response.ok) {
-      throw new Error(`Caspio API error: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`Caspio API error: ${response.statusText}. ${errorText}`);
     }
 
     return await response.json();
   } catch (error) {
-    console.error('Caspio submission error:', error);
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : 'Failed to submit to Caspio';
+    toast.error(errorMessage);
+    throw new Error(errorMessage);
   }
 };

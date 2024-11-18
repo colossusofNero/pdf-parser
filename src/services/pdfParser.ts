@@ -1,8 +1,9 @@
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.entry';
 import { ExtractedData, DepreciationRow } from '../types';
 
 // Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 interface TextItem {
   str: string;
@@ -15,31 +16,45 @@ const extractWhiteFontData = (textContent: { items: TextItem[] }): string[] => {
     .map(item => item.str);
 };
 
-const parseDepreciationTable = (text: string): DepreciationRow[] => {
-  const rows: DepreciationRow[] = [];
-  const tableRegex = /(\d{4})\s+(\d+(?:,\d{3})*(?:\.\d{2})?)\s+(\d+)\s+(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
-  
-  let match;
-  while ((match = tableRegex.exec(text)) !== null) {
-    rows.push({
-      year: parseInt(match[1]),
-      firstYearBonusQuote: parseFloat(match[2].replace(/,/g, '')),
-      taxYear: parseInt(match[3]),
-      totalBidAmount: parseFloat(match[4].replace(/,/g, ''))
-    });
-  }
-  
-  return rows;
-};
+const parseWhiteTextMetadata = (text: string): Partial<ExtractedData> => {
+  const data: Partial<ExtractedData> = {};
+  const fields = text.split('||').filter(Boolean);
 
-const extractNumericValue = (text: string): number => {
-  const match = text.match(/[\d,]+(?:\.\d{2})?/);
-  return match ? parseFloat(match[0].replace(/,/g, '')) : 0;
-};
+  fields.forEach(field => {
+    const [key, value] = field.split(':');
+    if (key && value) {
+      switch(key) {
+        case 'Name_of_Prospect':
+        case 'Address_of_Property':
+        case 'Zip_Code':
+        case 'Date_of_Purchase':
+        case 'Tax_Deadline_Quote':
+          data[key] = value.trim();
+          break;
+        case 'Acres_Land':
+        case 'Bid_Amount_Original':
+        case 'Pay_Upfront':
+        case 'Pay_50_50_Amount':
+        case 'Pay_Over_Time':
+        case 'Rush_Fee':
+          data[key] = parseFloat(value) || 0;
+          break;
+        case 'Purchase_Price':
+        case 'Capital_Improvements_Amount':
+        case 'Building_Value':
+        case 'Know_Land_Value':
+        case 'SqFt_Building':
+        case 'Year_Built':
+        case 'Multiple_Properties_Quote':
+        case 'First_Year_Bonus_Quote':
+        case 'Tax_Year':
+          data[key] = parseInt(value) || 0;
+          break;
+      }
+    }
+  });
 
-const extractDateValue = (text: string): string => {
-  const match = text.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
-  return match ? match[0] : '';
+  return data;
 };
 
 export const parsePDF = async (file: File): Promise<ExtractedData> => {
@@ -49,73 +64,52 @@ export const parsePDF = async (file: File): Promise<ExtractedData> => {
     
     const pdf = await loadingTask.promise;
     let extractedData: Partial<ExtractedData> = {
-      depreciationTable: [],
-      companyName: '',
-      propertyType: '',
-      address: '',
-      purchasePrice: 0,
-      capitalImprovements: 0,
-      landValue: 0,
-      purchaseDate: '',
-      buildingSqFt: 0,
-      acresLand: 0,
-      dueDate: '',
-      bidAmount: 0,
-      rushFee: 0
+      Name_of_Prospect: '',
+      Address_of_Property: '',
+      Zip_Code: '',
+      Purchase_Price: 0,
+      Capital_Improvements_Amount: 0,
+      Building_Value: 0,
+      Know_Land_Value: 0,
+      Date_of_Purchase: '',
+      SqFt_Building: 0,
+      Acres_Land: 0,
+      Year_Built: 0,
+      Bid_Amount_Original: 0,
+      Pay_Upfront: 0,
+      Pay_50_50_Amount: 0,
+      Pay_Over_Time: 0,
+      Rush_Fee: 0,
+      Multiple_Properties_Quote: 0,
+      First_Year_Bonus_Quote: 0,
+      Tax_Year: 0,
+      Tax_Deadline_Quote: ''
     };
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: TextItem) => item.str).join(' ');
-      const whiteFontData = extractWhiteFontData(textContent);
+    // Get the last page where metadata should be
+    const lastPage = await pdf.getPage(pdf.numPages);
+    const textContent = await lastPage.getTextContent();
+    
+    // Look for metadata in white text
+    const whiteTextItems = textContent.items.find((item: any) => 
+      item.str.includes('||Name_of_Prospect:')
+    );
 
-      // Extract fields using more specific regex patterns
-      const fieldPatterns = {
-        companyName: /Company:\s*([^:\n]+)/,
-        propertyType: /Property Type:\s*([^:\n]+)/,
-        address: /Address:\s*([^:\n]+)/,
-        purchasePrice: /Purchase Price:\s*([\d,]+(?:\.\d{2})?)/,
-        landValue: /Land Value:\s*([\d,]+(?:\.\d{2})?)/,
-        purchaseDate: /Purchase Date:\s*(\d{1,2}\/\d{1,2}\/\d{4})/,
-        buildingSqFt: /Building SqFt:\s*([\d,]+)/,
-        acresLand: /Acres Land:\s*([\d,.]+)/,
-        dueDate: /Due Date:\s*(\d{1,2}\/\d{1,2}\/\d{4})/,
-        bidAmount: /Bid Amount:\s*([\d,]+(?:\.\d{2})?)/,
-        rushFee: /Rush Fee:\s*([\d,]+(?:\.\d{2})?)/
-      };
-
-      // Extract values using patterns
-      Object.entries(fieldPatterns).forEach(([key, pattern]) => {
-        const match = pageText.match(pattern);
-        if (match) {
-          if (key.includes('Date')) {
-            extractedData[key as keyof ExtractedData] = match[1];
-          } else if (key.includes('Price') || key.includes('Amount') || key.includes('Value') || key.includes('Fee')) {
-            extractedData[key as keyof ExtractedData] = extractNumericValue(match[1]);
-          } else if (key.includes('SqFt') || key.includes('Acres')) {
-            extractedData[key as keyof ExtractedData] = parseFloat(match[1].replace(/,/g, ''));
-          } else {
-            extractedData[key as keyof ExtractedData] = match[1].trim();
-          }
-        }
-      });
-
-      // Process white font data
-      whiteFontData.forEach(data => {
-        if (data.includes('Capital Improvements:')) {
-          extractedData.capitalImprovements = extractNumericValue(data);
-        }
-      });
-
-      // Parse depreciation table if present
-      if (pageText.includes('Depreciation Table')) {
-        extractedData.depreciationTable = parseDepreciationTable(pageText);
-      }
+    if (whiteTextItems) {
+      const metadataString = whiteTextItems.str;
+      const parsedData = parseWhiteTextMetadata(metadataString);
+      extractedData = { ...extractedData, ...parsedData };
+    } else {
+      throw new Error('No metadata found in PDF');
     }
 
     // Validate required fields
-    const requiredFields = ['companyName', 'address', 'purchasePrice'];
+    const requiredFields = [
+      'Name_of_Prospect',
+      'Address_of_Property',
+      'Purchase_Price'
+    ];
+    
     const missingFields = requiredFields.filter(field => 
       !extractedData[field as keyof ExtractedData]
     );
