@@ -5,10 +5,12 @@ export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
+      external: [
+        'pdfjs-dist/build/pdf.worker.entry'
+      ],
       output: {
         manualChunks: {
-          pdfjs: ['pdfjs-dist'],
-          pdfjsWorker: ['pdfjs-dist/build/pdf.worker.entry']
+          pdfjs: ['pdfjs-dist']
         }
       }
     }

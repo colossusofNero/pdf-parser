@@ -1,20 +1,19 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.entry';
-import { ExtractedData, DepreciationRow } from '../types';
+import { ExtractedData } from '../types';
 
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// Set up PDF.js worker using CDN
+const PDFJS_VERSION = '3.11.174';
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
 
-interface TextItem {
+// Define the correct types for PDF.js text content
+interface TextMarkedContent {
   str: string;
+  dir: string;
+  width: number;
+  height: number;
   transform: number[];
+  fontName: string;
 }
-
-const extractWhiteFontData = (textContent: { items: TextItem[] }): string[] => {
-  return textContent.items
-    .filter(item => item.str.trim() && item.transform[0] === 0)
-    .map(item => item.str);
-};
 
 const parseWhiteTextMetadata = (text: string): Partial<ExtractedData> => {
   const data: Partial<ExtractedData> = {};
@@ -91,8 +90,8 @@ export const parsePDF = async (file: File): Promise<ExtractedData> => {
     const textContent = await lastPage.getTextContent();
     
     // Look for metadata in white text
-    const whiteTextItems = textContent.items.find((item: any) => 
-      item.str.includes('||Name_of_Prospect:')
+    const whiteTextItems = (textContent as any).items.find((item: TextMarkedContent) => 
+      item.str && item.str.includes('||Name_of_Prospect:')
     );
 
     if (whiteTextItems) {
