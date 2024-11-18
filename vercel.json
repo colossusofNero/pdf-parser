@@ -1,5 +1,19 @@
 {
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build"
+    }
+  ],
   "routes": [
+    {
+      "src": "^/assets/(.*)\\.(js|css|svg|png|jpg|jpeg|gif|ico)$",
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      },
+      "continue": true
+    },
     {
       "handle": "filesystem"
     },
@@ -10,12 +24,17 @@
   ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/assets/(.*)\\.js$",
       "headers": [
         {
           "key": "Content-Type",
-          "value": "text/html; charset=utf-8"
-        },
+          "value": "application/javascript; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
         {
           "key": "Cross-Origin-Embedder-Policy",
           "value": "require-corp"
@@ -23,15 +42,6 @@
         {
           "key": "Cross-Origin-Opener-Policy",
           "value": "same-origin"
-        }
-      ]
-    },
-    {
-      "source": "/(.*).js",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/javascript; charset=utf-8"
         }
       ]
     }
