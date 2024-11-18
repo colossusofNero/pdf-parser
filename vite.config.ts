@@ -1,32 +1,31 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [react()],
   build: {
-    assetsDir: 'assets',
+    outDir: 'dist',
+    emptyOutDir: true,
+    sourcemap: true,
     rollupOptions: {
+      input: resolve(__dirname, 'index.html'),
       output: {
         manualChunks: {
+          vendor: ['react', 'react-dom'],
           pdfjs: ['pdfjs-dist']
         },
-        entryFileNames: 'assets/[name].js',
-        chunkFileNames: 'assets/[name].js',
-        assetFileNames: 'assets/[name].[ext]'
+        format: 'es',
+        entryFileNames: '[name].[hash].js',
+        chunkFileNames: '[name].[hash].js',
+        assetFileNames: '[name].[hash].[ext]'
       }
     }
-  },
-  optimizeDeps: {
-    include: ['pdfjs-dist']
   },
   server: {
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin'
     }
-  },
-  resolve: {
-    extensions: ['.js', '.ts', '.jsx', '.tsx', '.json'],
-  },
-  base: '/'
+  }
 });
