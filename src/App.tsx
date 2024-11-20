@@ -1,91 +1,142 @@
 import React, { useState } from 'react';
+import { toast, Toaster } from 'react-hot-toast';
 import { FileUpload } from './components/FileUpload';
-import { DataPreview } from './components/DataPreview';
-import { Header } from './components/Header';
-import { extractPdfData, submitToCaspio } from './services/api';
-import { ExtractedData } from './types';
-import { Toaster, toast } from 'react-hot-toast';
+import { PdfDataDisplay } from './components/PdfDataDisplay';
+import { 
+  extractPdfData, 
+  submitToCaspio, 
+  type PartialExtractedData 
+} from './services/api';
+import { Card, CardContent } from './components/ui/card';
 
-function App() {
-  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+interface UserData {
+  firstName: string;
+  lastName: string;
+  Email_from_App: string;
+  smsPhone?: string;
+}
 
-  const handleFileSelect = async (file: File) => {
-    setIsProcessing(true);
+const App: React.FC = () => {
+  const [extractedData, setExtractedData] = useState<PartialExtractedData | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Add the formatFileName function inside the component
+  const formatFileName = (fileName: string): string => {
+    let formattedName = fileName;
+    if (!formattedName.startsWith('/')) {
+      formattedName = '/' + formattedName;
+    }
+    if (!formattedName.endsWith('.pdf')) {
+      formattedName = formattedName + '.pdf';
+    }
+    return formattedName;
+  };
+
+  const handleFileUploadAndUserData = async (
+    file: File,
+    userInputData: UserData
+  ) => {
+    setIsLoading(true);
     try {
-      const data = await extractPdfData(file);
-      setExtractedData(data);
-      toast.success('PDF processed successfully');
+      const extractedPdfData = await extractPdfData(file);
+      setExtractedData(extractedPdfData);
+      setUserData(userInputData);
+      setSelectedFile(file);
+      toast.success('PDF data extracted successfully');
     } catch (error) {
-      toast.error('Failed to process PDF');
-      console.error(error);
+      console.error('Error processing data:', error);
+      toast.error('Failed to extract PDF data');
     } finally {
-      setIsProcessing(false);
+      setIsLoading(false);
     }
   };
 
-  const handleDataEdit = (field: string, value: any) => {
-    if (!extractedData) return;
-
-    const updateNestedObject = (obj: any, path: string[], value: any): any => {
-      const [current, ...rest] = path;
-      if (rest.length === 0) {
-        return { ...obj, [current]: value };
-      }
-      return {
-        ...obj,
-        [current]: updateNestedObject(obj[current], rest, value)
-      };
-    };
-
-    const fieldPath = field.split('.');
-    const updatedData = updateNestedObject(extractedData, fieldPath, value);
-    setExtractedData(updatedData);
-  };
-
-  const handleSubmit = async () => {
-    if (!extractedData) return;
-
+  const handleSubmitToCaspio = async () => {
+    if (!extractedData || !userData || !selectedFile) {
+      toast.error('Please upload PDF and fill in all required fields');
+      return;
+    }
+  
+    setIsLoading(true);
     try {
-      await submitToCaspio(extractedData);
-      toast.success('Data submitted to Caspio successfully');
+      // Prepare data for submission
+      const submissionData: PartialExtractedData = {
+        ...extractedData,
+        Contact_Name_First: userData.firstName.trim(),
+        Contact_Name_Last: userData.lastName.trim(),
+        Contact_Phone: userData.smsPhone?.trim() || '',
+        Email: userData.Email_from_App.trim().toLowerCase(),
+        file: selectedFile, // Add the file for upload
+        Quote_PDF: formatFileName(selectedFile.name) // Format the filename
+      };
+  
+      // Submit to Caspio
+      await submitToCaspio(submissionData);
+      toast.success('Data successfully submitted to Caspio!');
+  
+      // Reset state after successful submission
       setExtractedData(null);
+      setUserData(null);
+      setSelectedFile(null);
     } catch (error) {
-      toast.error('Failed to submit data to Caspio');
-      console.error(error);
+      console.error('Submission error:', error);
+      if (error instanceof Error) {
+        toast.error(`Failed to submit: ${error.message}`);
+      } else {
+        toast.error('Failed to submit to Caspio');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-100">
       <Toaster position="top-right" />
-      
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <Header />
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold text-center mb-8">PDF Data Extractor</h1>
 
-        <main className="space-y-8">
+        <div className="max-w-4xl mx-auto space-y-6">
           {!extractedData && (
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <FileUpload onFileSelect={handleFileSelect} />
-              {isProcessing && (
-                <div className="mt-4 text-center text-gray-600">
-                  Processing PDF... Please wait
-                </div>
-              )}
-            </div>
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="text-xl font-semibold mb-4">Upload PDF & Enter Information</h2>
+                <FileUpload 
+                  onFileSelect={handleFileUploadAndUserData}
+                  isLoading={isLoading}
+                />
+              </CardContent>
+            </Card>
           )}
 
           {extractedData && (
-            <DataPreview
-              data={extractedData}
-              onSubmit={handleSubmit}
-              onEdit={handleDataEdit}
-            />
+            <div className="space-y-6">
+              <Card>
+                <CardContent className="p-6">
+                  <h2 className="text-xl font-semibold mb-4">Extracted Data</h2>
+                  <PdfDataDisplay data={extractedData} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <button
+                    onClick={handleSubmitToCaspio}
+                    disabled={isLoading}
+                    className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 transition-colors"
+                  >
+                    {isLoading ? 'Submitting...' : 'Submit to Caspio'}
+                  </button>
+                </CardContent>
+              </Card>
+            </div>
           )}
-        </main>
+        </div>
       </div>
     </div>
   );
-}
+};
 
 export default App;

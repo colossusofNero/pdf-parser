@@ -3,20 +3,38 @@ import { ExtractedData } from '../types';
 import { Check, AlertCircle } from 'lucide-react';
 
 interface DataPreviewProps {
-  data: ExtractedData;
-  onSubmit: () => void;
+  data: ExtractedData & { file?: File };
+  onSubmit: () => Promise<void>;
   onEdit: (field: string, value: any) => void;
+  isProcessing: boolean;
 }
 
-export const DataPreview: React.FC<DataPreviewProps> = ({ data, onSubmit, onEdit }) => {
-  const formatValue = (value: any, type: string) => {
-    if (type === 'currency') {
-      return `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const DataPreview: React.FC<DataPreviewProps> = ({ data, onSubmit, onEdit, isProcessing }) => {
+  // Convert MM/DD/YYYY to YYYY-MM-DD for date input
+  const convertDateForInput = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      const [month, day, year] = parts;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
-    if (type === 'acres') {
-      return Number(value).toFixed(2);
+    return '';
+  };
+
+  // Convert YYYY-MM-DD to MM/DD/YYYY for Caspio
+  const handleDateChange = (key: string, value: string) => {
+    if (!value) {
+      onEdit(key, '');
+      return;
     }
-    return value;
+
+    const date = new Date(value);
+    if (!isNaN(date.getTime())) {
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const year = date.getFullYear();
+      onEdit(key, `${month}/${day}/${year}`);
+    }
   };
 
   const fields = [
@@ -50,12 +68,28 @@ export const DataPreview: React.FC<DataPreviewProps> = ({ data, onSubmit, onEdit
         {fields.map(({ key, label, type }) => (
           <div key={key} className="flex items-center space-x-4">
             <label className="w-1/3 text-gray-600">{label}:</label>
-            <input
-              type={type === 'date' ? 'date' : type === 'number' ? 'number' : 'text'}
-              value={data[key as keyof ExtractedData]}
-              onChange={(e) => onEdit(key, e.target.value)}
-              className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
-            />
+            {type === 'date' ? (
+              <>
+                <input
+                  type="date"
+                  value={convertDateForInput(data[key as keyof ExtractedData] as string || '')}
+                  onChange={(e) => handleDateChange(key, e.target.value)}
+                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                />
+                {/* Display the MM/DD/YYYY format as text for reference */}
+                <span className="text-sm text-gray-500 ml-2">
+                  {data[key as keyof ExtractedData] || ''}
+                </span>
+              </>
+            ) : (
+              <input
+                type={type === 'number' || type === 'currency' ? 'number' : 'text'}
+                step={type === 'currency' ? '0.01' : type === 'number' ? '1' : undefined}
+                value={data[key as keyof ExtractedData] || ''}
+                onChange={(e) => onEdit(key, e.target.value)}
+                className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              />
+            )}
           </div>
         ))}
       </div>
@@ -70,7 +104,8 @@ export const DataPreview: React.FC<DataPreviewProps> = ({ data, onSubmit, onEdit
         </button>
         <button
           onClick={onSubmit}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+          disabled={isProcessing}
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50"
         >
           <Check className="w-4 h-4 mr-2" />
           Submit to Caspio

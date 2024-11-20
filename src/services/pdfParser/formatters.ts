@@ -1,31 +1,34 @@
 export const formatDate = (value: string): string => {
   if (!value) return '';
   
-  // Handle different date formats
-  const dateFormats = [
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // MM/DD/YYYY
-    /^(\d{4})-(\d{1,2})-(\d{1,2})$/    // YYYY-MM-DD
-  ];
-
-  for (const format of dateFormats) {
-    const match = value.match(format);
-    if (match) {
-      const [_, month, day, year] = match;
-      const date = new Date(Number(year), Number(month) - 1, Number(day));
-      
-      if (!isNaN(date.getTime())) {
-        return date.toLocaleDateString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric'
-        });
-      }
+  try {
+    // If already in MM/DD/YYYY format, return as is
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+      return value;
     }
+
+    // If in YYYY-MM-DD format, convert to MM/DD/YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split('-');
+      return `${month}/${day}/${year}`;
+    }
+
+    // Try to parse the date
+    const date = new Date(value);
+    if (!isNaN(date.getTime())) {
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const year = date.getFullYear();
+      return `${month}/${day}/${year}`;
+    }
+
+    return value;
+  } catch {
+    return value;
   }
-  
-  return '';
 };
 
+// Rest of the formatters.ts file remains the same
 export const formatNumber = (value: string | number, decimals: number = 2): number => {
   const strValue = String(value).replace(/[^0-9.-]/g, '');
   const num = parseFloat(strValue);
