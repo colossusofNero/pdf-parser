@@ -24,9 +24,9 @@ export interface ExtractedData {
   Contact_Name_First: string;
   Contact_Name_Last: string;
   Contact_Phone: string;
-  Email: string;
-  Quote_PDF: string; // Changed to string since it's just the filename
-  file?: File;  // Separate property for the actual file
+  Email_from_App: string;
+  Quote_pdf: string; // Changed to match new field name
+  file?: File;
 }
 
 export type PartialExtractedData = Partial<ExtractedData>;
@@ -56,8 +56,8 @@ export const extractPdfData = async (file: File): Promise<PartialExtractedData> 
     }
     return {
       ...extractedData,
-      file: file,  // Store the file separately
-      Quote_PDF: formatFileName(file.name)  // Store the formatted filename
+      file: file,
+      Quote_pdf: formatFileName(file.name) // Changed from Quote_PDF
     };
   } catch (error) {
     console.error('PDF extraction error:', error);
@@ -145,43 +145,40 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
   const apiKey = import.meta.env.VITE_CASPIO_API_KEY;
 
   try {
-    // First, handle file upload if present
     if (data.file) {
       try {
         await uploadFileToCaspio(data.file);
-        // We continue using our formatted filename regardless of upload response
       } catch (uploadError) {
         console.error('File upload error:', uploadError);
-        // Continue with submission even if file upload fails
       }
     }
 
     const mappedData = {
-      Name_of_Prospect: data.Name_of_Prospect?.trim(),
-      Address_of_Property: data.Address_of_Property?.trim(),
-      Zip_Code: data.Zip_Code?.trim(),
-      Purchase_Price: data.Purchase_Price ?? 0,
-      Capital_Improvements_Amount: data.Capital_Improvements_Amount ?? 0,
-      Building_Value: data.Building_Value ?? 0,
-      Know_Land_Value: data.Know_Land_Value ?? 0,
-      Date_of_Purchase: data.Date_of_Purchase?.trim(),
-      SqFt_Building: data.SqFt_Building ?? 0,
-      Acres_Land: data.Acres_Land ?? 0,
-      Year_Built: data.Year_Built ?? 0,
-      Bid_Amount_Original: data.Bid_Amount_Original ?? 0,
-      Pay_Upfront: data.Pay_Upfront ?? 0,
-      Pay_50_50_Amount: data.Pay_50_50_Amount ?? 0,
-      Pay_Over_Time: data.Pay_Over_Time ?? 0,
-      Rush_Fee: data.Rush_Fee ?? 0,
-      Multiple_Properties_Quote: data.Multiple_Properties_Quote ?? 0,
-      First_Year_Bonus_Quote: data.First_Year_Bonus_Quote ?? 0,
-      Tax_Year: data.Tax_Year ?? 0,
-      Tax_Deadline_Quote: data.Tax_Deadline_Quote?.trim(),
-      Contact_Name_First: data.Contact_Name_First?.trim(),
-      Contact_Name_Last: data.Contact_Name_Last?.trim(),
-      Contact_Phone: data.Contact_Phone?.trim(),
-      Email: data.Email?.trim().toLowerCase(),
-      Quote_PDF: data.Quote_PDF // Use the formatted filename we created earlier
+      'Name_of_Prospect': data.Name_of_Prospect?.trim(),
+      'Address_of_Property': data.Address_of_Property?.trim(),
+      'Zip_Code': data.Zip_Code?.trim(),
+      'Purchase_Price': data.Purchase_Price ?? 0,
+      'Capital_Improvements_Amount': data.Capital_Improvements_Amount ?? 0,
+      'Building_Value': data.Building_Value ?? 0,
+      'Know_Land_Value': data.Know_Land_Value ?? 0,
+      'Date_of_Purchase': data.Date_of_Purchase?.trim(),
+      'SqFt_Building': data.SqFt_Building ?? 0,
+      'Acres_Land': data.Acres_Land ?? 0,
+      'Year_Built': data.Year_Built ?? 0,
+      'Bid_Amount_Original': data.Bid_Amount_Original ?? 0,
+      'Pay_Upfront': data.Pay_Upfront ?? 0,
+      'Pay_50_50_Amount': data.Pay_50_50_Amount ?? 0,
+      'Pay_Over_Time': data.Pay_Over_Time ?? 0,
+      'Rush_Fee': data.Rush_Fee ?? 0,
+      'Multiple_Properties_Quote': data.Multiple_Properties_Quote ?? 0,
+      'First_Year_Bonus_Quote': data.First_Year_Bonus_Quote ?? 0,
+      'Tax_Year': data.Tax_Year ?? 0,
+      'Tax_Deadline_Quote': data.Tax_Deadline_Quote?.trim(),
+      'Contact_Name_First': data.Contact_Name_First?.trim(),
+      'Contact_Name_Last': data.Contact_Name_Last?.trim(),
+      'Contact_Phone': data.Contact_Phone?.trim(),
+      'Email_from_App': data.Email_from_App?.trim().toLowerCase(),
+      'Quote_pdf': data.Quote_pdf
     };
 
     console.log('Sending data to Caspio:', JSON.stringify(mappedData, null, 2));
@@ -196,13 +193,24 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
       body: JSON.stringify(mappedData),
     });
 
+    const responseText = await response.text();
+    
     if (!response.ok) {
-      const errorData = await response.json() as ErrorResponse;
-      throw new Error(`Caspio Data Submission Error: ${errorData.Message || response.statusText}`);
+      let errorMessage = 'Unknown error occurred';
+      if (responseText) {
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.Message || response.statusText;
+        } catch (e) {
+          errorMessage = responseText;
+        }
+      }
+      throw new Error(`Caspio Data Submission Error: ${errorMessage}`);
     }
 
-    console.log('Data successfully submitted to Caspio');
+    // If we get here, the submission was successful
     return true;
+
   } catch (error) {
     console.error('Submission Error:', error);
     throw error;

@@ -135,7 +135,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, isLoading 
               disabled={isLoading}
             />
             <input
-              type="email"
+              type="text"
               name="Email_from_App"
               placeholder="Email *"
               value={userData.Email_from_App}

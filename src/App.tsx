@@ -67,9 +67,9 @@ const App: React.FC = () => {
         Contact_Name_First: userData.firstName.trim(),
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
-        Email: userData.Email_from_App.trim().toLowerCase(),
-        file: selectedFile, // Add the file for upload
-        Quote_PDF: formatFileName(selectedFile.name) // Format the filename
+        Email_from_App: userData.Email_from_App.trim().toLowerCase(),
+        file: selectedFile,
+        Quote_pdf: formatFileName(selectedFile.name) // Changed from Quote_PDF
       };
   
       // Submit to Caspio
