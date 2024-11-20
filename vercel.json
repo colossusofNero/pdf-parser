@@ -58,9 +58,5 @@
         }
       ]
     }
-  ],
-  "staticFiles": {
-    "src": "./public",
-    "dest": "/public"
-  }
+  ]
 }
