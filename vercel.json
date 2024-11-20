@@ -33,6 +33,15 @@
       ]
     },
     {
+      "source": "/src/(.*)\\.js$",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/javascript; charset=utf-8"
+        }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
         {
@@ -42,8 +51,16 @@
         {
           "key": "Cross-Origin-Opener-Policy",
           "value": "same-origin"
+        },
+        {
+          "key": "Content-Type",
+          "value": "text/html; charset=utf-8"
         }
       ]
     }
-  ]
+  ],
+  "staticFiles": {
+    "src": "./public",
+    "dest": "/public"
+  }
 }

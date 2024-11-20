@@ -1,12 +1,10 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs';
+
+// Use the jsDelivr-hosted worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs';
 
 export const initializePDFWorker = async () => {
   try {
-    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      // Set up the worker directly from the imported module
-      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-    }
     return pdfjsLib;
   } catch (error) {
     console.error('Error initializing PDF.js worker:', error);

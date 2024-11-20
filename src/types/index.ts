@@ -6,7 +6,7 @@ export interface ExtractedData {
   Capital_Improvements_Amount: number;
   Building_Value: number;
   Know_Land_Value: number;
-  Date_of_Purchase: string;
+  Date_of_Purchase: string; // Ensure format is MM/DD/YYYY
   SqFt_Building: number;
   Acres_Land: number;
   Year_Built: number;
@@ -19,4 +19,12 @@ export interface ExtractedData {
   First_Year_Bonus_Quote: number;
   Tax_Year: number;
   Tax_Deadline_Quote: string;
+
+  // Required fields for user contact information
+  Email_from_App: string; // Mandatory
+  firstName: string; // Mandatory
+  lastName: string; // Mandatory
+  smsPhone?: string; // Optional
+  file?: File; // Optional
 }
+
