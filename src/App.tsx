@@ -22,18 +22,6 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Add the formatFileName function inside the component
-  const formatFileName = (fileName: string): string => {
-    let formattedName = fileName;
-    if (!formattedName.startsWith('/')) {
-      formattedName = '/' + formattedName;
-    }
-    if (!formattedName.endsWith('.pdf')) {
-      formattedName = formattedName + '.pdf';
-    }
-    return formattedName;
-  };
-
   const handleFileUploadAndUserData = async (
     file: File,
     userInputData: UserData
@@ -58,25 +46,22 @@ const App: React.FC = () => {
       toast.error('Please upload PDF and fill in all required fields');
       return;
     }
-  
+
     setIsLoading(true);
     try {
-      // Prepare data for submission
       const submissionData: PartialExtractedData = {
         ...extractedData,
         Contact_Name_First: userData.firstName.trim(),
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
-        file: selectedFile,
-        Quote_pdf: formatFileName(selectedFile.name) // Changed from Quote_PDF
+        Quote_pdf: `/RCGV_${userData.firstName} ${userData.lastName}_${extractedData.Address_of_Property}.pdf`,
+        file: selectedFile
       };
-  
-      // Submit to Caspio
+
       await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');
-  
-      // Reset state after successful submission
+      
       setExtractedData(null);
       setUserData(null);
       setSelectedFile(null);
@@ -97,7 +82,7 @@ const App: React.FC = () => {
       <Toaster position="top-right" />
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold text-center mb-8">PDF Data Extractor</h1>
-
+        
         <div className="max-w-4xl mx-auto space-y-6">
           {!extractedData && (
             <Card>
