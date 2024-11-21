@@ -32,7 +32,6 @@ export interface ExtractedData {
 export type PartialExtractedData = Partial<ExtractedData>;
 
 const excelDateToJSDate = (excelNumber: number): string => {
-  // Excel date serial numbers start from December 30, 1899
   const date = new Date((excelNumber - 25569) * 86400 * 1000);
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const day = date.getDate().toString().padStart(2, '0');
@@ -44,25 +43,20 @@ const formatDate = (dateString: string | undefined): string => {
   if (!dateString) return '';
   
   try {
-    // Check if the date contains '45350' (Excel date)
     if (dateString.includes('45350')) {
-      console.log('Found Excel date in string:', dateString);
-      return excelDateToJSDate(45350); // Use the Excel number directly
+      return excelDateToJSDate(45350);
     }
 
-    // If it's just a pure number
     if (/^\d+$/.test(dateString)) {
-      console.log('Converting pure Excel date:', dateString);
       return excelDateToJSDate(parseInt(dateString));
     }
 
-    // Regular date format
     const parts = dateString.split('/');
     if (parts.length === 3) {
       const month = parts[0].padStart(2, '0');
       const day = parts[1].padStart(2, '0');
       const year = parts[2];
-      if (year.length === 4) { // If it's already a regular year
+      if (year.length === 4) {
         return `${month}/${day}/${year}`;
       }
     }
@@ -79,6 +73,10 @@ export const uploadFileToCaspio = async (file: File): Promise<string> => {
   const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
   const apiKey = import.meta.env.VITE_CASPIO_API_KEY;
 
+  if (!apiKey) {
+    throw new Error('API key not configured');
+  }
+
   const formData = new FormData();
   formData.append('file', file);
 
@@ -86,17 +84,18 @@ export const uploadFileToCaspio = async (file: File): Promise<string> => {
     const response = await fetch(fileUploadUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${apiKey.trim()}`,
       },
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`File upload failed: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`File upload failed: ${response.status} ${response.statusText} ${errorText}`);
     }
 
-    const responseText = await response.text();
-    return responseText || file.name;
+    const responseData = await response.json();
+    return responseData.fileUrl || file.name;
   } catch (error) {
     console.error('File Upload Error:', error);
     throw error;
@@ -128,11 +127,12 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
   const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
   const apiKey = import.meta.env.VITE_CASPIO_API_KEY;
 
-  // Validate data
+  if (!apiKey) {
+    throw new Error('API key not configured');
+  }
+
   if (data.Date_of_Purchase) {
-    console.log('Original date:', data.Date_of_Purchase);
     const formattedDate = formatDate(data.Date_of_Purchase);
-    console.log('Formatted date:', formattedDate);
     if (!formattedDate) {
       throw new Error('Invalid date format');
     }
@@ -141,7 +141,12 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
 
   try {
     if (data.file) {
-      await uploadFileToCaspio(data.file);
+      try {
+        const fileUrl = await uploadFileToCaspio(data.file);
+        data.Quote_pdf = fileUrl;
+      } catch (uploadError) {
+        console.error('File upload failed:', uploadError);
+      }
     }
 
     const mappedData = {
@@ -172,12 +177,10 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
       'Quote_pdf': data.Quote_pdf || ''
     };
 
-    console.log('Sending data to Caspio:', JSON.stringify(mappedData, null, 2));
-
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
@@ -185,13 +188,13 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      let errorMessage = text;
+      const errorData = await response.text();
+      let errorMessage;
       try {
-        const errorData = JSON.parse(text);
-        errorMessage = errorData.Message || response.statusText;
-      } catch (e) {
-        // Keep the original text if JSON parsing fails
+        const parsedError = JSON.parse(errorData);
+        errorMessage = parsedError.Message || response.statusText;
+      } catch {
+        errorMessage = errorData || response.statusText;
       }
       throw new Error(`Caspio Data Submission Error: ${errorMessage}`);
     }
