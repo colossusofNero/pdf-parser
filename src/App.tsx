@@ -49,8 +49,10 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
+      // First create submission data with all extracted data
       const submissionData: PartialExtractedData = {
-        ...extractedData,
+        ...extractedData,  // This preserves all extracted fields including CapEx_Date and Type_of_Property_Quote
+        // Then override only the contact-related fields
         Contact_Name_First: userData.firstName.trim(),
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
@@ -58,6 +60,9 @@ const App: React.FC = () => {
         Quote_pdf: `/RCGV_${userData.firstName} ${userData.lastName}_${extractedData.Address_of_Property}.pdf`,
         file: selectedFile
       };
+
+      // Log the data being submitted to verify fields are present
+      console.log('Submitting data:', submissionData);
 
       await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');

@@ -19,6 +19,8 @@ export interface ExtractedData {
   First_Year_Bonus_Quote: number;
   Tax_Year: number;
   Tax_Deadline_Quote: string;
+  CapEx_Date: string;
+  Type_of_Property_Quote: string;
 
   // Required fields for user contact information
   Email_from_App: string; // Mandatory
@@ -26,5 +28,17 @@ export interface ExtractedData {
   lastName: string; // Mandatory
   smsPhone?: string; // Optional
   file?: File; // Optional
+  
+  // Add depreciation table reference
+  depreciationTable?: DepreciationRow[];
 }
 
+export interface DepreciationRow {
+  year: number;
+  standardDepreciation: number;
+  traditionalCostSeg: number;
+  bonusDepreciation: number;
+  firstYearBonusQuote?: number; // Optional field for PropertyInfoForm
+  taxYear?: number; // Optional field for PropertyInfoForm
+  totalBidAmount?: number; // Optional field for PropertyInfoForm
+}

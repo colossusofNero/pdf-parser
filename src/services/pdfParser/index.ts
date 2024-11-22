@@ -3,6 +3,7 @@ import { PDFParserOptions, ValidationError } from './types';
 import { extractMetadataRow } from './metadata';
 import { validateRequiredFields, validateFieldFormats } from './validators';
 import { initializePDFWorker } from '../../lib/pdf-init';
+import { TextContent } from 'pdfjs-dist/types/src/display/api';
 
 export const parsePDF = async (
   file: File,
@@ -34,13 +35,26 @@ export const parsePDF = async (
     for (let i = 1; i <= pdf.numPages; i++) {
       try {
         const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
+        const textContent = await page.getTextContent() as TextContent;
 
         if (!textContent || !textContent.items || textContent.items.length === 0) {
           continue;
         }
 
-        const data = extractMetadataRow(textContent);
+        const data = extractMetadataRow({
+          items: textContent.items.map(item => {
+            if ('str' in item && 'transform' in item) {
+              return {
+                str: item.str,
+                transform: item.transform
+              };
+            }
+            return {
+              str: '',
+              transform: [0, 0, 0, 0, 0, 0]
+            };
+          })
+        });
 
         if (options.validateFields) {
           const validationErrors = [

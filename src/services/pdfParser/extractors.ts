@@ -22,7 +22,7 @@ const formatZipCode = (zip: string): string => {
   return cleaned.slice(0, 5).padStart(5, '0');
 };
 
-export const extractMetadataRow = (textContent: { items: TextItem[] }): ExtractedData => {
+export const extractMetadataRow = (textContent: { items: TextItem[] }): Partial<ExtractedData> => {
   // Find the metadata row (white text)
   const whiteTextItems = textContent.items
     .filter(item => item.str.trim() && item.transform[0] === 0)
@@ -40,7 +40,7 @@ export const extractMetadataRow = (textContent: { items: TextItem[] }): Extracte
     }, {});
 
   // Create and format the extracted data
-  const data: ExtractedData = {
+  const data: Partial<ExtractedData> = {
     Name_of_Prospect: fields.Name_of_Prospect || '',
     Address_of_Property: fields.Address_of_Property || '',
     Zip_Code: formatZipCode(fields.Zip_Code || ''),
@@ -49,6 +49,8 @@ export const extractMetadataRow = (textContent: { items: TextItem[] }): Extracte
     Building_Value: formatNumber(fields.Building_Value || '0'),
     Know_Land_Value: formatNumber(fields.Know_Land_Value || '0'),
     Date_of_Purchase: formatDate(fields.Date_of_Purchase || ''),
+    CapEx_Date: formatDate(fields.CapEx_Date || ''),
+    Type_of_Property_Quote: fields.Type_of_Property_Quote || '',
     SqFt_Building: Math.round(formatNumber(fields.SqFt_Building || '0', 0)),
     Acres_Land: formatNumber(fields.Acres_Land || '0', 2),
     Year_Built: Math.round(formatNumber(fields.Year_Built || '0', 0)),
