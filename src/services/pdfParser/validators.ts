@@ -8,7 +8,9 @@ export const validateRequiredFields = (data: Partial<ExtractedData>): Validation
     'Name_of_Prospect',
     'Address_of_Property',
     'Zip_Code',
-    'Purchase_Price'
+    'Purchase_Price',
+    'Type_of_Property', // Added Type_of_Property
+    'CapEx_Date' // Added CapEx_Date
   ];
 
   requiredFields.forEach(field => {
@@ -62,6 +64,14 @@ export const validateFieldFormats = (data: Partial<ExtractedData>): ValidationEr
       });
     }
   });
+
+  // Validate CapEx_Date format (if it's expected to be a valid date string)
+  if (data.CapEx_Date && isNaN(Date.parse(data.CapEx_Date))) {
+    errors.push({
+      field: 'CapEx_Date',
+      message: 'Invalid date format for CapEx_Date'
+    });
+  }
 
   return errors;
 };

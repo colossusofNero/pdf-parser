@@ -41,6 +41,8 @@ const parseWhiteTextMetadata = (text: string): Partial<ExtractedData> => {
         case 'Zip_Code':
         case 'Date_of_Purchase':
         case 'Tax_Deadline_Quote':
+        case 'Type_of_Property_Quote': // Added this
+        case 'CapEx_Date': // Added this
           data[key] = value.trim();
           break;
         case 'Acres_Land':
@@ -94,7 +96,10 @@ export const parsePDF = async (file: File): Promise<ExtractedData> => {
       First_Year_Bonus_Quote: 0,
       Tax_Year: 0,
       Tax_Deadline_Quote: '',
+      CapEx_Date: '', // Add this
+      Type_of_Property_Quote: '', // Add this
     };
+    
 
     const lastPage = await pdf.getPage(pdf.numPages);
     const textContent = await lastPage.getTextContent();

@@ -26,6 +26,8 @@ export interface ExtractedData {
   Contact_Phone: string;
   Email_from_App: string;
   Quote_pdf: string;
+  CapEx_Date: string;
+  Type_of_Property_Quote: string;
   file?: File;
 }
 
@@ -131,12 +133,21 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
     throw new Error('API key not configured');
   }
 
+  // Format both dates using the same function
   if (data.Date_of_Purchase) {
     const formattedDate = formatDate(data.Date_of_Purchase);
     if (!formattedDate) {
-      throw new Error('Invalid date format');
+      throw new Error('Invalid date format for Date_of_Purchase');
     }
     data.Date_of_Purchase = formattedDate;
+  }
+
+  if (data.CapEx_Date) {
+    const formattedCapExDate = formatDate(data.CapEx_Date);
+    if (!formattedCapExDate) {
+      throw new Error('Invalid date format for CapEx_Date');
+    }
+    data.CapEx_Date = formattedCapExDate;
   }
 
   try {
@@ -174,7 +185,9 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
       'Contact_Name_Last': data.Contact_Name_Last?.trim(),
       'Contact_Phone': data.Contact_Phone?.trim(),
       'Email_from_App': data.Email_from_App?.trim().toLowerCase(),
-      'Quote_pdf': data.Quote_pdf || ''
+      'Quote_pdf': data.Quote_pdf || '',
+      'CapEx_Date': data.CapEx_Date || '',
+      'Type_of_Property_Quote': data.Type_of_Property_Quote?.trim() || ''
     };
 
     const response = await fetch(apiUrl, {

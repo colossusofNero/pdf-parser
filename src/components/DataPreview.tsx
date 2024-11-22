@@ -37,6 +37,13 @@ export const DataPreview: React.FC<DataPreviewProps> = ({ data, onSubmit, onEdit
     }
   };
 
+  // Format value for display and input
+  const formatValue = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    if (value instanceof File) return value.name;
+    return value.toString();
+  };
+
   const fields = [
     { key: 'Name_of_Prospect', label: 'Client Name', type: 'text' },
     { key: 'Address_of_Property', label: 'Property Address', type: 'text' },
@@ -46,6 +53,8 @@ export const DataPreview: React.FC<DataPreviewProps> = ({ data, onSubmit, onEdit
     { key: 'Building_Value', label: 'Building Value', type: 'currency' },
     { key: 'Know_Land_Value', label: 'Land Value', type: 'currency' },
     { key: 'Date_of_Purchase', label: 'Purchase Date', type: 'date' },
+    { key: 'CapEx_Date', label: 'CapEx Date', type: 'date' },
+    { key: 'Type_of_Property_Quote', label: 'Property Type', type: 'text' },
     { key: 'SqFt_Building', label: 'Building Sq Ft', type: 'number' },
     { key: 'Acres_Land', label: 'Land Acres', type: 'acres' },
     { key: 'Year_Built', label: 'Year Built', type: 'number' },
@@ -65,33 +74,37 @@ export const DataPreview: React.FC<DataPreviewProps> = ({ data, onSubmit, onEdit
       <h2 className="text-2xl font-bold mb-6">Extracted Data Preview</h2>
       
       <div className="grid grid-cols-2 gap-6 mb-8">
-        {fields.map(({ key, label, type }) => (
-          <div key={key} className="flex items-center space-x-4">
-            <label className="w-1/3 text-gray-600">{label}:</label>
-            {type === 'date' ? (
-              <>
+        {fields.map(({ key, label, type }) => {
+          const value = data[key as keyof ExtractedData];
+          const formattedValue = formatValue(value);
+
+          return (
+            <div key={key} className="flex items-center space-x-4">
+              <label className="w-1/3 text-gray-600">{label}:</label>
+              {type === 'date' ? (
+                <div className="flex-1 flex items-center">
+                  <input
+                    type="date"
+                    value={convertDateForInput(formattedValue)}
+                    onChange={(e) => handleDateChange(key, e.target.value)}
+                    className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-500 ml-2">
+                    {formattedValue}
+                  </span>
+                </div>
+              ) : (
                 <input
-                  type="date"
-                  value={convertDateForInput(data[key as keyof ExtractedData] as string || '')}
-                  onChange={(e) => handleDateChange(key, e.target.value)}
+                  type={type === 'number' || type === 'currency' ? 'number' : 'text'}
+                  step={type === 'currency' ? '0.01' : type === 'number' ? '1' : undefined}
+                  value={formattedValue}
+                  onChange={(e) => onEdit(key, e.target.value)}
                   className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
                 />
-                {/* Display the MM/DD/YYYY format as text for reference */}
-                <span className="text-sm text-gray-500 ml-2">
-                  {data[key as keyof ExtractedData] || ''}
-                </span>
-              </>
-            ) : (
-              <input
-                type={type === 'number' || type === 'currency' ? 'number' : 'text'}
-                step={type === 'currency' ? '0.01' : type === 'number' ? '1' : undefined}
-                value={data[key as keyof ExtractedData] || ''}
-                onChange={(e) => onEdit(key, e.target.value)}
-                className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
-              />
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex justify-end space-x-4">

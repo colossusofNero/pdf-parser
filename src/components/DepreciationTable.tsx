@@ -7,8 +7,19 @@ interface DepreciationTableProps {
 }
 
 export const DepreciationTable: React.FC<DepreciationTableProps> = ({ data, onEdit }) => {
-  const headers = ['Year', 'First Year Bonus Quote', 'Tax Year', 'Total Bid Amount'];
-  const fields: (keyof DepreciationRow)[] = ['year', 'firstYearBonusQuote', 'taxYear', 'totalBidAmount'];
+  const headers = [
+    'Year', 
+    'Standard Depreciation', 
+    'Traditional Cost Seg', 
+    'Bonus Depreciation'
+  ];
+  
+  const fields: (keyof DepreciationRow)[] = [
+    'year',
+    'standardDepreciation',
+    'traditionalCostSeg',
+    'bonusDepreciation'
+  ];
 
   return (
     <div className="mb-8">
