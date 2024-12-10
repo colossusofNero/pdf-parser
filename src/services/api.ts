@@ -33,6 +33,7 @@ export interface ExtractedData {
 
 export type PartialExtractedData = Partial<ExtractedData>;
 
+// Helper functions
 const excelDateToJSDate = (excelNumber: number): string => {
   const date = new Date((excelNumber - 25569) * 86400 * 1000);
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -41,69 +42,145 @@ const excelDateToJSDate = (excelNumber: number): string => {
   return `${month}/${day}/${year}`;
 };
 
-const formatDate = (dateString: string | undefined): string => {
+const formatDate = (dateString?: string): string => {
   if (!dateString) return '';
-  
   try {
-    if (dateString.includes('45350')) {
-      return excelDateToJSDate(45350);
-    }
-
     if (/^\d+$/.test(dateString)) {
       return excelDateToJSDate(parseInt(dateString));
     }
-
     const parts = dateString.split('/');
     if (parts.length === 3) {
       const month = parts[0].padStart(2, '0');
       const day = parts[1].padStart(2, '0');
       const year = parts[2];
-      if (year.length === 4) {
-        return `${month}/${day}/${year}`;
-      }
+      return `${month}/${day}/${year}`;
     }
-
-    console.error('Unhandled date format:', dateString);
-    return '';
+    throw new Error('Unsupported date format');
   } catch (error) {
-    console.error('Date formatting error:', error, dateString);
+    console.error('Date formatting error:', error);
     return '';
   }
 };
 
-export const uploadFileToCaspio = async (file: File): Promise<string> => {
-  const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
-  const apiKey = import.meta.env.VITE_CASPIO_API_KEY;
+// Token-related variables
+let accessToken: string = ''; // Current token
+let tokenExpiration: number = 0; // Token expiration timestamp
+const clientId = import.meta.env.VITE_CASPIO_CLIENT_ID;
+const clientSecret = import.meta.env.VITE_CASPIO_CLIENT_SECRET;
+const tokenUrl = import.meta.env.VITE_CASPIO_TOKEN_URL;
 
-  if (!apiKey) {
-    throw new Error('API key not configured');
+// Function to fetch a new token
+const fetchNewAccessToken = async (): Promise<void> => {
+  if (!clientId || !clientSecret || !tokenUrl) {
+    throw new Error('Client ID, Client Secret, or Token URL is not configured.');
   }
 
-  const formData = new FormData();
-  formData.append('file', file);
-
   try {
-    const response = await fetch(fileUploadUrl, {
+    const body = `grant_type=client_credentials&client_id=${clientId}&client_secret=${clientSecret}`;
+
+    const response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: formData,
+      body,
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`File upload failed: ${response.status} ${response.statusText} ${errorText}`);
+      throw new Error(`Failed to fetch token: ${response.statusText} ${errorText}`);
     }
 
-    const responseData = await response.json();
-    return responseData.fileUrl || file.name;
+    const data = await response.json();
+    if (!data.access_token || !data.expires_in) {
+      throw new Error('Token response does not include an access token or expiration time.');
+    }
+
+    accessToken = data.access_token;
+    tokenExpiration = Date.now() + data.expires_in * 1000; // Convert expiration to milliseconds
+    console.log('Access token fetched successfully and will expire at:', new Date(tokenExpiration));
   } catch (error) {
-    console.error('File Upload Error:', error);
+    console.error('Error fetching access token:', error);
     throw error;
   }
 };
 
+// Function to ensure the token is valid
+const ensureValidAccessToken = async (): Promise<void> => {
+  if (!accessToken || Date.now() >= tokenExpiration) {
+    console.warn('Access token is missing or expired. Fetching a new token...');
+    await fetchNewAccessToken();
+  }
+};
+
+// Handle requests with token refresh logic
+const handleRequestWithRetry = async (url: string, options: RequestInit): Promise<Response> => {
+  await ensureValidAccessToken();
+
+  let response: Response;
+
+  try {
+    const updatedOptions = {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': accessToken, // No 'Bearer' prefix
+      },
+    };
+
+    response = await fetch(url, updatedOptions);
+
+    if (response.status === 401) {
+      console.warn('Access token expired during request. Fetching a new token...');
+      await fetchNewAccessToken();
+
+      const retryOptions = {
+        ...options,
+        headers: {
+          ...options.headers,
+          'Authorization': accessToken, // No 'Bearer' prefix
+        },
+      };
+
+      response = await fetch(url, retryOptions);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+    }
+  } catch (error) {
+    console.error('Request error:', error);
+    throw error;
+  }
+
+  return response;
+};
+
+// File upload
+export const uploadFileToCaspio = async (file: File): Promise<string> => {
+  const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await handleRequestWithRetry(fileUploadUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': accessToken, // No 'Bearer' prefix
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`File upload failed: ${response.statusText} ${errorText}`);
+  }
+
+  const responseData = await response.json();
+  return responseData.fileUrl || file.name;
+};
+
+// Extract data from PDF
 export const extractPdfData = async (file: File): Promise<PartialExtractedData> => {
   if (!file) {
     throw new Error('No file provided');
@@ -111,110 +188,53 @@ export const extractPdfData = async (file: File): Promise<PartialExtractedData> 
 
   try {
     const extractedData = await parsePDF(file);
-    if (!extractedData) {
-      throw new Error('Failed to extract data from PDF');
-    }
-    return {
-      ...extractedData,
-      file: file,
-      Quote_pdf: file.name
-    };
+    return { ...extractedData, file, Quote_pdf: file.name };
   } catch (error) {
     console.error('PDF extraction error:', error);
     throw error;
   }
 };
 
+// Submit data to Caspio
 export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
-  const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
-  const apiKey = import.meta.env.VITE_CASPIO_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('API key not configured');
-  }
-
-  // Format both dates using the same function
-  if (data.Date_of_Purchase) {
-    const formattedDate = formatDate(data.Date_of_Purchase);
-    if (!formattedDate) {
-      throw new Error('Invalid date format for Date_of_Purchase');
-    }
-    data.Date_of_Purchase = formattedDate;
-  }
-
-  if (data.CapEx_Date) {
-    const formattedCapExDate = formatDate(data.CapEx_Date);
-    if (!formattedCapExDate) {
-      throw new Error('Invalid date format for CapEx_Date');
-    }
-    data.CapEx_Date = formattedCapExDate;
-  }
-
   try {
+    const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
+
+    if (data.Date_of_Purchase) {
+      data.Date_of_Purchase = formatDate(data.Date_of_Purchase);
+    }
+
+    if (data.CapEx_Date) {
+      data.CapEx_Date = formatDate(data.CapEx_Date);
+    }
+
     if (data.file) {
       try {
         const fileUrl = await uploadFileToCaspio(data.file);
         data.Quote_pdf = fileUrl;
-      } catch (uploadError) {
-        console.error('File upload failed:', uploadError);
+      } catch (error) {
+        console.error('File upload failed:', error);
+        throw new Error('File upload failed during Caspio submission.');
       }
     }
 
-    const mappedData = {
-      'Name_of_Prospect': data.Name_of_Prospect?.trim(),
-      'Address_of_Property': data.Address_of_Property?.trim(),
-      'Zip_Code': data.Zip_Code?.trim(),
-      'Purchase_Price': data.Purchase_Price ?? 0,
-      'Capital_Improvements_Amount': data.Capital_Improvements_Amount ?? 0,
-      'Building_Value': data.Building_Value ?? 0,
-      'Know_Land_Value': data.Know_Land_Value ?? 0,
-      'Date_of_Purchase': data.Date_of_Purchase,
-      'SqFt_Building': data.SqFt_Building ?? 0,
-      'Acres_Land': data.Acres_Land ?? 0,
-      'Year_Built': data.Year_Built ?? 0,
-      'Bid_Amount_Original': data.Bid_Amount_Original ?? 0,
-      'Pay_Upfront': data.Pay_Upfront ?? 0,
-      'Pay_50_50_Amount': data.Pay_50_50_Amount ?? 0,
-      'Pay_Over_Time': data.Pay_Over_Time ?? 0,
-      'Rush_Fee': data.Rush_Fee ?? 0,
-      'Multiple_Properties_Quote': data.Multiple_Properties_Quote ?? 0,
-      'First_Year_Bonus_Quote': data.First_Year_Bonus_Quote ?? 0,
-      'Tax_Year': data.Tax_Year ?? 0,
-      'Tax_Deadline_Quote': data.Tax_Deadline_Quote?.trim() || '',
-      'Contact_Name_First': data.Contact_Name_First?.trim(),
-      'Contact_Name_Last': data.Contact_Name_Last?.trim(),
-      'Contact_Phone': data.Contact_Phone?.trim(),
-      'Email_from_App': data.Email_from_App?.trim().toLowerCase(),
-      'Quote_pdf': data.Quote_pdf || '',
-      'CapEx_Date': data.CapEx_Date || '',
-      'Type_of_Property_Quote': data.Type_of_Property_Quote?.trim() || ''
-    };
-
-    const response = await fetch(apiUrl, {
+    const response = await handleRequestWithRetry(apiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Authorization': accessToken, // No 'Bearer' prefix
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
       },
-      body: JSON.stringify(mappedData),
+      body: JSON.stringify(data),
     });
 
     if (!response.ok) {
-      const errorData = await response.text();
-      let errorMessage;
-      try {
-        const parsedError = JSON.parse(errorData);
-        errorMessage = parsedError.Message || response.statusText;
-      } catch {
-        errorMessage = errorData || response.statusText;
-      }
-      throw new Error(`Caspio Data Submission Error: ${errorMessage}`);
+      const errorText = await response.text();
+      throw new Error(`Caspio submission failed: ${response.status} ${errorText}`);
     }
 
     return true;
   } catch (error) {
-    console.error('Submission Error:', error);
+    console.error('Error submitting to Caspio:', error);
     throw error;
   }
 };

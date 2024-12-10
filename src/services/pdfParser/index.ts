@@ -3,7 +3,6 @@ import { PDFParserOptions, ValidationError } from './types';
 import { extractMetadataRow } from './metadata';
 import { validateRequiredFields, validateFieldFormats } from './validators';
 import { initializePDFWorker } from '../../lib/pdf-init';
-import { TextContent } from 'pdfjs-dist/types/src/display/api';
 
 export const parsePDF = async (
   file: File,
@@ -28,33 +27,20 @@ export const parsePDF = async (
       throw new Error('The PDF file appears to be empty.');
     }
 
-    let extractedData: ExtractedData | null = null;
+    let extractedData: Partial<ExtractedData> | null = null;
     let errors: ValidationError[] = [];
 
     // Process each page until we find valid metadata
     for (let i = 1; i <= pdf.numPages; i++) {
       try {
         const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent() as TextContent;
+        const textContent = await page.getTextContent();
 
         if (!textContent || !textContent.items || textContent.items.length === 0) {
           continue;
         }
 
-        const data = extractMetadataRow({
-          items: textContent.items.map(item => {
-            if ('str' in item && 'transform' in item) {
-              return {
-                str: item.str,
-                transform: item.transform
-              };
-            }
-            return {
-              str: '',
-              transform: [0, 0, 0, 0, 0, 0]
-            };
-          })
-        });
+        const data = extractMetadataRow(textContent);
 
         if (options.validateFields) {
           const validationErrors = [
@@ -90,7 +76,14 @@ export const parsePDF = async (
       );
     }
 
-    return extractedData;
+    // Ensure all required fields are present
+    if (!extractedData.Name_of_Prospect) throw new Error('Name_of_Prospect is required');
+    if (!extractedData.Address_of_Property) throw new Error('Address_of_Property is required');
+    if (!extractedData.Zip_Code) throw new Error('Zip_Code is required');
+    if (!extractedData.Purchase_Price) throw new Error('Purchase_Price is required');
+
+    // Type assertion after validation
+    return extractedData as ExtractedData;
   } catch (error) {
     console.error('PDF parsing error:', error);
     throw new Error(error instanceof Error ? error.message : 'Failed to parse PDF file');
