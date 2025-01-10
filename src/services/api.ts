@@ -33,7 +33,7 @@ export interface ExtractedData {
 
 export type PartialExtractedData = Partial<ExtractedData>;
 
-// Helper functions
+// Helper function for Excel date conversion
 const excelDateToJSDate = (excelNumber: number): string => {
   const date = new Date((excelNumber - 25569) * 86400 * 1000);
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -42,6 +42,7 @@ const excelDateToJSDate = (excelNumber: number): string => {
   return `${month}/${day}/${year}`;
 };
 
+// Helper function for date formatting
 const formatDate = (dateString?: string): string => {
   if (!dateString) return '';
   try {
@@ -62,122 +63,50 @@ const formatDate = (dateString?: string): string => {
   }
 };
 
-// Token-related variables
-let accessToken: string = ''; // Current token
-let tokenExpiration: number = 0; // Token expiration timestamp
-const clientId = import.meta.env.VITE_CASPIO_CLIENT_ID;
-const clientSecret = import.meta.env.VITE_CASPIO_CLIENT_SECRET;
-const tokenUrl = import.meta.env.VITE_CASPIO_TOKEN_URL;
+// Get static token from environment
+const staticToken = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
 
-// Function to fetch a new token
-const fetchNewAccessToken = async (): Promise<void> => {
-  if (!clientId || !clientSecret || !tokenUrl) {
-    throw new Error('Client ID, Client Secret, or Token URL is not configured.');
+// File upload function using static token
+export const uploadFileToCaspio = async (file: File): Promise<string> => {
+  const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
+
+  if (!fileUploadUrl) {
+    throw new Error('Caspio file upload URL is not configured');
   }
 
-  try {
-    const body = `grant_type=client_credentials&client_id=${clientId}&client_secret=${clientSecret}`;
+  if (!staticToken) {
+    throw new Error('Caspio access token is not configured');
+  }
 
-    const response = await fetch(tokenUrl, {
+  const formData = new FormData();
+  formData.append('File', file);
+
+  try {
+    const response = await fetch(fileUploadUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'accept': 'application/json',
+        'Authorization': `bearer ${staticToken}`
       },
-      body,
+      body: formData
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to fetch token: ${response.statusText} ${errorText}`);
+      console.error('Upload failed:', {
+        status: response.status,
+        error: errorText
+      });
+      throw new Error(`Request failed: ${response.status}`);
     }
 
-    const data = await response.json();
-    if (!data.access_token || !data.expires_in) {
-      throw new Error('Token response does not include an access token or expiration time.');
-    }
-
-    accessToken = data.access_token;
-    tokenExpiration = Date.now() + data.expires_in * 1000; // Convert expiration to milliseconds
-    console.log('Access token fetched successfully and will expire at:', new Date(tokenExpiration));
+    const responseData = await response.json();
+    console.log('Upload response:', responseData);
+    return responseData.fileUrl || file.name;
   } catch (error) {
-    console.error('Error fetching access token:', error);
+    console.error('File upload error:', error);
     throw error;
   }
-};
-
-// Function to ensure the token is valid
-const ensureValidAccessToken = async (): Promise<void> => {
-  if (!accessToken || Date.now() >= tokenExpiration) {
-    console.warn('Access token is missing or expired. Fetching a new token...');
-    await fetchNewAccessToken();
-  }
-};
-
-// Handle requests with token refresh logic
-const handleRequestWithRetry = async (url: string, options: RequestInit): Promise<Response> => {
-  await ensureValidAccessToken();
-
-  let response: Response;
-
-  try {
-    const updatedOptions = {
-      ...options,
-      headers: {
-        ...options.headers,
-        'Authorization': accessToken, // No 'Bearer' prefix
-      },
-    };
-
-    response = await fetch(url, updatedOptions);
-
-    if (response.status === 401) {
-      console.warn('Access token expired during request. Fetching a new token...');
-      await fetchNewAccessToken();
-
-      const retryOptions = {
-        ...options,
-        headers: {
-          ...options.headers,
-          'Authorization': accessToken, // No 'Bearer' prefix
-        },
-      };
-
-      response = await fetch(url, retryOptions);
-    }
-
-    if (!response.ok) {
-      throw new Error(`Request failed: ${response.status} ${response.statusText}`);
-    }
-  } catch (error) {
-    console.error('Request error:', error);
-    throw error;
-  }
-
-  return response;
-};
-
-// File upload
-export const uploadFileToCaspio = async (file: File): Promise<string> => {
-  const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
-
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await handleRequestWithRetry(fileUploadUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': accessToken, // No 'Bearer' prefix
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`File upload failed: ${response.statusText} ${errorText}`);
-  }
-
-  const responseData = await response.json();
-  return responseData.fileUrl || file.name;
 };
 
 // Extract data from PDF
@@ -195,41 +124,56 @@ export const extractPdfData = async (file: File): Promise<PartialExtractedData> 
   }
 };
 
-// Submit data to Caspio
+// Submit data to Caspio using static token
+// Submit data to Caspio using static token
 export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
+  const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
+
+  if (!apiUrl) {
+    throw new Error('API URL not configured');
+  }
+
+  if (!staticToken) {
+    throw new Error('Caspio access token is not configured');
+  }
+
   try {
-    const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
+    // Format dates
+    const formattedData = {
+      ...data,
+      Date_of_Purchase: data.Date_of_Purchase ? formatDate(data.Date_of_Purchase) : undefined,
+      CapEx_Date: data.CapEx_Date ? formatDate(data.CapEx_Date) : undefined,
+    };
 
-    if (data.Date_of_Purchase) {
-      data.Date_of_Purchase = formatDate(data.Date_of_Purchase);
-    }
-
-    if (data.CapEx_Date) {
-      data.CapEx_Date = formatDate(data.CapEx_Date);
-    }
-
+    // Handle file upload if present
     if (data.file) {
       try {
         const fileUrl = await uploadFileToCaspio(data.file);
-        data.Quote_pdf = fileUrl;
+        formattedData.Quote_pdf = fileUrl;
       } catch (error) {
         console.error('File upload failed:', error);
         throw new Error('File upload failed during Caspio submission.');
       }
     }
 
-    const response = await handleRequestWithRetry(apiUrl, {
+    // Remove the file field before submitting to Caspio
+    const { file, ...dataToSubmit } = formattedData;
+
+    console.log('Submitting to Caspio:', dataToSubmit);
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': accessToken, // No 'Bearer' prefix
+        'Authorization': `bearer ${staticToken}`,
         'Content-Type': 'application/json',
+        'accept': 'application/json'
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify(dataToSubmit)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Caspio submission failed: ${response.status} ${errorText}`);
+      throw new Error(`Submission failed: ${response.status} ${errorText}`);
     }
 
     return true;
