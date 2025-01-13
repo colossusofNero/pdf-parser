@@ -25,7 +25,7 @@
       ]
     },
     {
-      "source": "/(.*)",
+      "source": "/(.*)", // Applies to all routes
       "headers": [
         {
           "key": "Cross-Origin-Embedder-Policy",
@@ -34,6 +34,18 @@
         {
           "key": "Cross-Origin-Opener-Policy",
           "value": "same-origin"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*" // Replace "*" with your specific domain if needed
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Authorization, Content-Type"
         }
       ]
     }
