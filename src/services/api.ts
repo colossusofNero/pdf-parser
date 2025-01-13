@@ -68,28 +68,32 @@ const staticToken = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
 
 // File upload function using static token
 export const uploadFileToCaspio = async (file: File): Promise<string> => {
-  const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
-
-  if (!fileUploadUrl) {
-    throw new Error('Caspio file upload URL is not configured');
-  }
-
-  if (!staticToken) {
-    throw new Error('Caspio access token is not configured');
-  }
+  const proxyUrl = '/api/proxy-upload'; // Custom Vercel proxy route
 
   const formData = new FormData();
   formData.append('File', file);
 
   try {
-    const response = await fetch(fileUploadUrl, {
+    const response = await fetch(proxyUrl, {
       method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'Authorization': `bearer ${staticToken}`
-      },
-      body: formData
+      body: formData,
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Proxy upload failed:', { status: response.status, error: errorText });
+      throw new Error(`Proxy request failed: ${response.status} ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('Proxy upload response:', responseData);
+    return responseData.fileUrl || file.name;
+  } catch (error) {
+    console.error('File upload via proxy failed:', error);
+    throw error;
+  }
+};
+
 
     if (!response.ok) {
       const errorText = await response.text();
