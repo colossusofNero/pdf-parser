@@ -68,7 +68,7 @@ const staticToken = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
 
 // File upload function using static token
 export const uploadFileToCaspio = async (file: File): Promise<string> => {
-  const proxyUrl = '/api/proxy-upload'; // Custom Vercel proxy route
+  const proxyUrl = '/api/proxy-upload'; // Point to the Vercel route
 
   const formData = new FormData();
   formData.append('File', file);
@@ -93,7 +93,6 @@ export const uploadFileToCaspio = async (file: File): Promise<string> => {
     throw error;
   }
 };
-
 
     if (!response.ok) {
       const errorText = await response.text();
