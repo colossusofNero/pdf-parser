@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import FormData from 'form-data';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const fileUploadUrl = process.env.VITE_CASPIO_FILE_UPLOAD_URL;
@@ -14,13 +15,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    const formData = new FormData();
+
+    // Assuming the file comes in the request body as a raw buffer
+    if (req.body) {
+      formData.append('File', req.body, 'uploaded-file.pdf'); // Replace with the actual filename if needed
+    } else {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
     const response = await fetch(fileUploadUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',
+        ...formData.getHeaders(), // Include multipart headers
       },
-      body: req.body, // Pass the request body directly
+      body: formData,
     });
 
     const data = await response.json();
