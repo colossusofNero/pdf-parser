@@ -25,7 +25,7 @@
       ]
     },
     {
-      "source": "/(.*)", // Applies to all routes
+      "source": "/(.*)",
       "headers": [
         {
           "key": "Cross-Origin-Embedder-Policy",
@@ -37,7 +37,7 @@
         },
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "*" // Replace "*" with your specific domain if needed
+          "value": "https://pdf-parser-pied.vercel.app/"
         },
         {
           "key": "Access-Control-Allow-Methods",
