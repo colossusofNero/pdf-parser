@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vercel dev",
+    "dev": "npx vercel dev",
     "dev:vite": "vite",
     "build": "tsc && vite build",
     "vercel-build": "vite build",
