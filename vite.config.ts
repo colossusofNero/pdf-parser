@@ -37,13 +37,6 @@ export default defineConfig({
         font-src 'self';
       `.replace(/\s+/g, ' ').trim(),
     },
-    proxy: {
-      '/api': {
-        target: 'https://c1acc979.caspio.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-    },
     open: true,
   },
   base: './',
