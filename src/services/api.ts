@@ -94,24 +94,6 @@ export const uploadFileToCaspio = async (file: File): Promise<string> => {
   }
 };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Upload failed:', {
-        status: response.status,
-        error: errorText
-      });
-      throw new Error(`Request failed: ${response.status}`);
-    }
-
-    const responseData = await response.json();
-    console.log('Upload response:', responseData);
-    return responseData.fileUrl || file.name;
-  } catch (error) {
-    console.error('File upload error:', error);
-    throw error;
-  }
-};
-
 // Extract data from PDF
 export const extractPdfData = async (file: File): Promise<PartialExtractedData> => {
   if (!file) {
