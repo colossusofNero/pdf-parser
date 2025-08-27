@@ -33,65 +33,10 @@ export interface ExtractedData {
 
 export type PartialExtractedData = Partial<ExtractedData>;
 
-// Retry mechanism for failed requests
-const retryWithBackoff = async (
-  fn: () => Promise<any>, 
-  maxRetries: number = 3, 
-  baseDelay: number = 1000
-): Promise<any> => {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (attempt === maxRetries) {
-        throw error;
-      }
-      
-      const delay = baseDelay * Math.pow(2, attempt - 1);
-      console.log(`Attempt ${attempt} failed, retrying in ${delay}ms...`, error);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-};
-
-// Robust environment configuration with validation
-const getEnvironmentConfig = () => {
-  const config = {
-    token: import.meta.env.VITE_CASPIO_ACCESS_TOKEN || '',
-    apiUrl: import.meta.env.VITE_CASPIO_API_URL || '',
-    fileUploadUrl: import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL || ''
-  };
-
-  // Validation
-  const errors = [];
-  if (!config.token) errors.push('VITE_CASPIO_ACCESS_TOKEN');
-  if (!config.apiUrl) errors.push('VITE_CASPIO_API_URL');
-  if (!config.fileUploadUrl) errors.push('VITE_CASPIO_FILE_UPLOAD_URL');
-
-  if (errors.length > 0) {
-    console.error('Missing environment variables:', errors);
-    console.log('Available env vars:', Object.keys(import.meta.env).filter(k => k.startsWith('VITE_CASPIO')));
-  }
-
-  console.log('🔧 Environment Configuration:', {
-    hasToken: !!config.token,
-    tokenLength: config.token.length,
-    tokenPreview: config.token ? config.token.substring(0, 10) + '...' : 'MISSING',
-    apiUrl: config.apiUrl || 'MISSING',
-    fileUploadUrl: config.fileUploadUrl || 'MISSING',
-    mode: import.meta.env.MODE,
-    timestamp: new Date().toISOString()
-  });
-
-  return config;
-};
-
-// Robust date formatting with multiple format support
+// Date formatting
 const formatDate = (dateString?: string): string => {
   if (!dateString) return '';
-  
   try {
-    // Handle Excel serial numbers
     if (/^\d+$/.test(dateString)) {
       const excelNumber = parseInt(dateString);
       const date = new Date((excelNumber - 25569) * 86400 * 1000);
@@ -100,17 +45,13 @@ const formatDate = (dateString?: string): string => {
       const year = date.getFullYear();
       return `${month}/${day}/${year}`;
     }
-
-    // Handle MM/DD/YYYY format
-    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString)) {
-      const parts = dateString.split('/');
+    const parts = dateString.split('/');
+    if (parts.length === 3) {
       const month = parts[0].padStart(2, '0');
       const day = parts[1].padStart(2, '0');
       const year = parts[2];
       return `${month}/${day}/${year}`;
     }
-
-    // Handle ISO dates and other formats
     const date = new Date(dateString);
     if (!isNaN(date.getTime())) {
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -118,272 +59,194 @@ const formatDate = (dateString?: string): string => {
       const year = date.getFullYear();
       return `${month}/${day}/${year}`;
     }
-
-    console.warn('Unsupported date format:', dateString);
-    return dateString; // Return as-is if we can't parse it
+    throw new Error('Unsupported date format');
   } catch (error) {
-    console.error('Date formatting error for:', dateString, error);
-    return dateString; // Return original value on error
+    console.error('Date formatting error:', error);
+    return '';
   }
 };
 
-// Validate extracted data
-const validateExtractedData = (data: PartialExtractedData): string[] => {
-  const errors = [];
-  
-  // Required fields validation
-  const requiredFields = ['Name_of_Prospect', 'Address_of_Property', 'Purchase_Price'];
-  requiredFields.forEach(field => {
-    if (!data[field as keyof PartialExtractedData]) {
-      errors.push(`Missing required field: ${field}`);
-    }
-  });
-
-  // Data type validation
-  const numericFields = ['Purchase_Price', 'Capital_Improvements_Amount', 'Building_Value'];
-  numericFields.forEach(field => {
-    const value = data[field as keyof PartialExtractedData];
-    if (value !== undefined && (isNaN(Number(value)) || Number(value) < 0)) {
-      errors.push(`Invalid numeric value for ${field}: ${value}`);
-    }
-  });
-
-  return errors;
-};
-
-// Extract data from PDF with enhanced error handling
+// Extract data from PDF
 export const extractPdfData = async (file: File): Promise<PartialExtractedData> => {
   if (!file) {
     throw new Error('No file provided');
   }
 
-  if (!file.type.includes('pdf')) {
-    throw new Error('File must be a PDF');
-  }
-
-  if (file.size > 10 * 1024 * 1024) { // 10MB limit
-    throw new Error('File size must be less than 10MB');
-  }
-
   try {
-    console.log('📄 Starting PDF extraction:', {
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type,
-      timestamp: new Date().toISOString()
-    });
-
-    const extractedData = await retryWithBackoff(
-      () => parsePDF(file),
-      2, // Max 2 retries for PDF parsing
-      1000 // 1 second base delay
-    );
-
-    // Validate extracted data
-    const validationErrors = validateExtractedData(extractedData);
-    if (validationErrors.length > 0) {
-      console.warn('⚠️ Data validation warnings:', validationErrors);
-      // Don't fail completely, just warn
-    }
-
-    console.log('✅ PDF extraction successful:', {
-      fieldsExtracted: Object.keys(extractedData).length,
-      hasRequiredFields: !!(extractedData.Name_of_Prospect && extractedData.Address_of_Property),
-      timestamp: new Date().toISOString()
-    });
-
+    const extractedData = await parsePDF(file);
     return { ...extractedData, file, Quote_pdf: file.name };
   } catch (error) {
-    console.error('❌ PDF extraction failed:', error);
-    throw new Error(`PDF extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('PDF extraction error:', error);
+    throw error;
   }
 };
 
-// Robust file upload with multiple fallback strategies
+// File upload function
 export const uploadFileToCaspio = async (file: File): Promise<string> => {
-  console.log('📤 Starting file upload:', {
-    fileName: file.name,
-    fileSize: file.size,
+  console.log('File upload requested for:', file.name);
+  return file.name;
+};
+
+// Submit data to Caspio with comprehensive diagnostic logging
+export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
+  const config = {
+    token: import.meta.env.VITE_CASPIO_ACCESS_TOKEN,
+    apiUrl: import.meta.env.VITE_CASPIO_API_URL,
+    fileUploadUrl: import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL
+  };
+
+  console.log('🔍 CASPIO DIAGNOSTIC START');
+  console.log('📋 Environment Configuration:', {
+    hasToken: !!config.token,
+    tokenLength: config.token?.length || 0,
+    tokenStart: config.token?.substring(0, 15) || 'MISSING',
+    tokenEnd: config.token?.substring(-10) || 'MISSING',
+    apiUrl: config.apiUrl || 'MISSING',
     timestamp: new Date().toISOString()
   });
 
-  const config = getEnvironmentConfig();
-  
-  if (!config.fileUploadUrl || !config.token) {
-    console.log('⚠️ File upload not configured, using filename only');
-    return file.name;
-  }
-
-  try {
-    const uploadResult = await retryWithBackoff(async () => {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch(config.fileUploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.token}`,
-          'Accept': 'application/json'
-        },
-        body: formData
-      });
-
-      console.log('📡 Upload response:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-      }
-
-      const responseText = await response.text();
-      
-      if (responseText.trim()) {
-        try {
-          const responseData = JSON.parse(responseText);
-          return responseData.fileUrl || responseData.data?.fileUrl || file.name;
-        } catch (e) {
-          console.log('Upload response not JSON, using filename');
-          return file.name;
-        }
-      }
-
-      return file.name;
-    }, 3, 2000); // 3 retries, 2 second base delay
-
-    console.log('✅ File upload successful:', uploadResult);
-    return uploadResult;
-
-  } catch (error) {
-    console.error('⚠️ File upload failed, continuing with filename:', error);
-    return file.name; // Don't fail the entire process
-  }
-};
-
-// Production-ready Caspio submission with comprehensive error handling
-export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
-  const config = getEnvironmentConfig();
-  const submissionId = Date.now().toString(36); // Unique ID for this submission
-
-  console.log(`🚀 Starting Caspio submission [${submissionId}]:`, {
-    timestamp: new Date().toISOString(),
-    fieldCount: Object.keys(data).length,
-    hasFile: !!data.file
-  });
-
   if (!config.token) {
-    throw new Error('❌ Caspio access token is not configured. Please check environment variables.');
+    throw new Error('❌ Caspio access token is not configured');
   }
 
   if (!config.apiUrl) {
-    throw new Error('❌ Caspio API URL is not configured. Please check environment variables.');
+    throw new Error('❌ Caspio API URL is not configured');
   }
 
   try {
-    // Handle file upload first if needed
-    let fileUrl = data.Quote_pdf || '';
-    if (data.file && (!fileUrl || fileUrl === data.file.name)) {
-      try {
-        fileUrl = await uploadFileToCaspio(data.file);
-        console.log(`📎 File upload completed [${submissionId}]:`, fileUrl);
-      } catch (uploadError) {
-        console.warn(`⚠️ File upload failed [${submissionId}], continuing without file:`, uploadError);
-        fileUrl = data.file.name; // Use filename as fallback
-      }
-    }
-
-    // Format and clean data
+    // Format dates
     const formattedData = {
       ...data,
       Date_of_Purchase: data.Date_of_Purchase ? formatDate(data.Date_of_Purchase) : undefined,
       CapEx_Date: data.CapEx_Date ? formatDate(data.CapEx_Date) : undefined,
-      Quote_pdf: fileUrl
     };
 
-    // Remove file object and undefined values
+    // Remove file and undefined values
     const { file, ...dataToSubmit } = formattedData;
     Object.keys(dataToSubmit).forEach(key => {
-      const value = dataToSubmit[key as keyof typeof dataToSubmit];
-      if (value === undefined || value === null || value === '') {
+      if (dataToSubmit[key as keyof typeof dataToSubmit] === undefined) {
         delete dataToSubmit[key as keyof typeof dataToSubmit];
       }
     });
 
-    // Final validation
-    const validationErrors = validateExtractedData(dataToSubmit);
-    if (validationErrors.length > 0) {
-      console.warn(`⚠️ Validation warnings [${submissionId}]:`, validationErrors);
-    }
-
-    console.log(`📦 Prepared submission data [${submissionId}]:`, {
-      fieldCount: Object.keys(dataToSubmit).length,
-      hasRequiredFields: !!(dataToSubmit.Name_of_Prospect && dataToSubmit.Address_of_Property),
+    console.log('📦 Submission Data Analysis:', {
+      totalFields: Object.keys(dataToSubmit).length,
+      requiredFields: {
+        Name_of_Prospect: dataToSubmit.Name_of_Prospect || 'MISSING',
+        Address_of_Property: dataToSubmit.Address_of_Property || 'MISSING',
+        Purchase_Price: dataToSubmit.Purchase_Price || 'MISSING',
+        Email_from_App: dataToSubmit.Email_from_App || 'MISSING'
+      },
       payloadSize: JSON.stringify(dataToSubmit).length
     });
 
-    // Submit to Caspio with retry logic
-    const result = await retryWithBackoff(async () => {
-      const response = await fetch(config.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-          // Removed X-Submission-ID - Caspio doesn't allow custom headers
-        },
-        body: JSON.stringify(dataToSubmit)
-      });
+    console.log('📋 FULL PAYLOAD TO CASPIO:');
+    console.log(JSON.stringify(dataToSubmit, null, 2));
 
-      console.log(`📡 Caspio response [${submissionId}]:`, {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries())
-      });
+    // Make the request with detailed logging
+    console.log('🌐 Making request to:', config.apiUrl);
+    
+    const startTime = Date.now();
+    const response = await fetch(config.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(dataToSubmit)
+    });
+    const endTime = Date.now();
 
-      // Get response body
-      const responseText = await response.text();
-      console.log(`📄 Response body [${submissionId}]:`, {
-        length: responseText.length,
-        content: responseText || '(empty)'
-      });
+    console.log('📡 CASPIO RESPONSE ANALYSIS:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      redirected: response.redirected,
+      type: response.type,
+      url: response.url,
+      requestDuration: `${endTime - startTime}ms`,
+      timestamp: new Date().toISOString()
+    });
 
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        if (responseText) {
-          try {
-            const errorJson = JSON.parse(responseText);
-            errorMessage = errorJson.message || errorJson.error || errorMessage;
-          } catch (e) {
-            errorMessage = responseText || errorMessage;
-          }
+    console.log('📋 RESPONSE HEADERS:');
+    response.headers.forEach((value, name) => {
+      console.log(`  ${name}: ${value}`);
+    });
+
+    // Get response body with detailed analysis
+    const responseText = await response.text();
+    
+    console.log('📄 RESPONSE BODY ANALYSIS:', {
+      contentLength: responseText.length,
+      isEmpty: responseText.trim() === '',
+      firstChars: responseText.substring(0, 100),
+      containsJSON: responseText.trim().startsWith('{') || responseText.trim().startsWith('['),
+      containsHTML: responseText.includes('<html>') || responseText.includes('<body>'),
+      containsError: responseText.toLowerCase().includes('error')
+    });
+
+    console.log('📋 FULL RESPONSE BODY:');
+    console.log(responseText || '(EMPTY)');
+
+    // Analyze the response
+    if (!response.ok) {
+      console.error('❌ CASPIO REJECTION - Request was not successful');
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      
+      if (responseText) {
+        try {
+          const errorJson = JSON.parse(responseText);
+          errorMessage = errorJson.message || errorJson.error || errorMessage;
+          console.log('📋 PARSED ERROR:', errorJson);
+        } catch (e) {
+          console.log('📋 ERROR RESPONSE NOT JSON');
+          errorMessage = responseText;
         }
-        throw new Error(`Caspio API error: ${errorMessage}`);
       }
+      
+      throw new Error(`Caspio API rejected request: ${errorMessage}`);
+    }
 
-      // Handle successful response
-      if (responseText.trim() === '') {
-        console.log(`✅ Empty response indicates success [${submissionId}]`);
-        return { success: true, message: 'Empty response (success)' };
+    // Handle successful but empty response
+    if (responseText.trim() === '') {
+      console.log('⚠️  EMPTY SUCCESS RESPONSE - This might indicate an issue');
+      console.log('🔍 POTENTIAL CAUSES:');
+      console.log('  1. Authentication succeeded but write failed silently');
+      console.log('  2. Data format was rejected but no error was returned');
+      console.log('  3. Required fields are missing');
+      console.log('  4. Token has read-only permissions');
+      
+      // For diagnostic purposes, let's NOT assume this is success
+      throw new Error('Caspio returned empty response - data may not have been saved. Check Caspio directly.');
+    }
+
+    // Try to parse successful response
+    try {
+      const responseData = JSON.parse(responseText);
+      console.log('✅ CASPIO SUCCESS - Data parsed:', responseData);
+      
+      // Check if the response indicates actual success
+      if (responseData.Result && Array.isArray(responseData.Result)) {
+        console.log(`✅ SUCCESS CONFIRMED - ${responseData.Result.length} record(s) created`);
+        return true;
+      } else if (responseData.success || responseData.Success) {
+        console.log('✅ SUCCESS CONFIRMED - Success flag present');
+        return true;
+      } else {
+        console.log('⚠️  SUCCESS UNCLEAR - Response format unexpected');
+        console.log('📋 Response data:', responseData);
+        return true; // Assume success if we got valid JSON
       }
-
-      try {
-        const responseData = JSON.parse(responseText);
-        console.log(`✅ Submission successful [${submissionId}]:`, responseData);
-        return responseData;
-      } catch (parseError) {
-        console.log(`✅ Non-JSON success response [${submissionId}]:`, responseText);
-        return { success: true, rawResponse: responseText };
-      }
-    }, 3, 2000); // 3 retries, 2 second base delay
-
-    console.log(`🎉 Caspio submission completed successfully [${submissionId}]`);
-    return true;
+    } catch (parseError) {
+      console.log('✅ SUCCESS - Non-JSON response but HTTP 200');
+      console.log('📋 Response was:', responseText);
+      return true;
+    }
 
   } catch (error) {
-    console.error(`💥 Caspio submission failed [${submissionId}]:`, error);
+    console.error('💥 CASPIO SUBMISSION FAILED');
+    console.error('📋 Error details:', error);
+    console.log('🔍 DIAGNOSTIC COMPLETE - CHECK LOGS ABOVE');
     throw error;
   }
 };
