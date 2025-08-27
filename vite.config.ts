@@ -25,19 +25,40 @@ export default defineConfig({
   },
   server: {
     headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
+      // Completely disable COEP/COOP for PDF.js compatibility
+      'Cross-Origin-Embedder-Policy': 'unsafe-none',
+      'Cross-Origin-Opener-Policy': 'unsafe-none',
       'Content-Security-Policy': `
         default-src 'self';
-        script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:;
+        script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com;
         style-src 'self' 'unsafe-inline';
-        worker-src 'self' blob:;
-        connect-src 'self' https://c1acc979.caspio.com;
-        img-src 'self' data:;
+        worker-src 'self' blob: data: https://cdnjs.cloudflare.com;
+        connect-src 'self' https://c1acc979.caspio.com https://api.caspio.com https://cdnjs.cloudflare.com;
+        img-src 'self' data: blob:;
         font-src 'self';
+        object-src 'none';
       `.replace(/\s+/g, ' ').trim(),
+    },
+    proxy: {
+      '/api': {
+        target: 'https://c1acc979.caspio.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        }
+      },
+    },
+    cors: {
+      origin: true,
+      credentials: true
     },
     open: true,
   },
   base: './',
+  optimizeDeps: {
+    exclude: ['pdfjs-dist']
+  }
 });
