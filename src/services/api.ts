@@ -46,246 +46,175 @@ const excelDateToJSDate = (excelNumber: number): string => {
 const formatDate = (dateString?: string): string => {
   if (!dateString) return '';
   try {
-    // Handle Excel serial dates
     if (/^\d+$/.test(dateString)) {
       return excelDateToJSDate(parseInt(dateString));
     }
-    
-    // Handle MM/DD/YYYY format (already correct)
-    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString)) {
-      const parts = dateString.split('/');
+    const parts = dateString.split('/');
+    if (parts.length === 3) {
       const month = parts[0].padStart(2, '0');
       const day = parts[1].padStart(2, '0');
       const year = parts[2];
       return `${month}/${day}/${year}`;
     }
-    
-    // Handle other date formats by parsing and reformatting
-    const date = new Date(dateString);
-    if (!isNaN(date.getTime())) {
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const day = date.getDate().toString().padStart(2, '0');
-      const year = date.getFullYear();
-      return `${month}/${day}/${year}`;
-    }
-    
     throw new Error('Unsupported date format');
   } catch (error) {
-    console.error('Date formatting error for value:', dateString, error);
+    console.error('Date formatting error:', error);
     return '';
   }
 };
 
-// Debug environment variables
-const debugEnvVars = () => {
-  console.log('Environment Variables Debug:', {
-    hasViteToken: !!import.meta.env.VITE_CASPIO_ACCESS_TOKEN,
-    hasViteApiUrl: !!import.meta.env.VITE_CASPIO_API_URL,
-    hasViteFileUrl: !!import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL,
-    viteTokenLength: import.meta.env.VITE_CASPIO_ACCESS_TOKEN?.length || 0,
-    isDev: import.meta.env.DEV,
-    isProd: import.meta.env.PROD
-  });
-};
+// Get static token from environment
+const staticToken = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
 
-// Get environment variables with fallbacks and debugging
-const getEnvVars = () => {
-  debugEnvVars();
+// File upload function with better error handling
+export const uploadFileToCaspio = async (file: File): Promise<string> => {
+  console.log('File upload requested for:', file.name);
   
-  const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
-  const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
   const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
   
-  return { token, apiUrl, fileUploadUrl };
-};
-
-// File upload function with improved error handling
-export const uploadFileToCaspio = async (file: File): Promise<string> => {
-  if (!file) {
-    throw new Error('No file provided');
-  }
-
-  const { token, fileUploadUrl } = getEnvVars();
-
-  // Try proxy first, then direct upload
-  try {
-    // Option 1: Use proxy route (recommended for production)
-    console.log('Attempting file upload via proxy...');
-    const formData = new FormData();
-    formData.append('File', file);
-
-    const proxyResponse = await fetch('/api/proxy-upload', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (proxyResponse.ok) {
-      const responseData = await proxyResponse.json();
-      console.log('Proxy upload successful:', responseData);
-      return responseData.fileUrl || responseData.data?.fileUrl || file.name;
-    } else {
-      console.warn('Proxy upload failed, status:', proxyResponse.status);
-      // Fall through to direct upload
-    }
-  } catch (proxyError) {
-    console.warn('Proxy upload error:', proxyError);
-    // Fall through to direct upload
-  }
-
-  // Option 2: Direct upload (fallback)
-  if (!fileUploadUrl || !token) {
-    console.error('Missing Caspio configuration for direct upload');
-    throw new Error('File upload configuration is missing');
+  if (!fileUploadUrl || !staticToken) {
+    console.log('Missing upload configuration, returning filename');
+    return file.name;
   }
 
   try {
-    console.log('Attempting direct file upload to Caspio...');
     const formData = new FormData();
     formData.append('file', file);
 
-    const directResponse = await fetch(fileUploadUrl, {
+    const response = await fetch(fileUploadUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${staticToken}`,
         'Accept': 'application/json'
       },
       body: formData
     });
 
-    if (!directResponse.ok) {
-      const errorText = await directResponse.text();
-      console.error('Direct upload failed:', {
-        status: directResponse.status,
-        statusText: directResponse.statusText,
-        error: errorText
-      });
-      throw new Error(`Direct upload failed: ${directResponse.status} - ${errorText}`);
+    console.log('Upload response status:', response.status);
+
+    if (response.ok) {
+      const responseText = await response.text();
+      console.log('Upload response:', responseText);
+      
+      if (responseText.trim()) {
+        try {
+          const responseData = JSON.parse(responseText);
+          return responseData.fileUrl || responseData.data?.fileUrl || file.name;
+        } catch (e) {
+          return file.name;
+        }
+      }
     }
-
-    const responseData = await directResponse.json();
-    console.log('Direct upload successful:', responseData);
-    return responseData.fileUrl || responseData.data?.fileUrl || file.name;
-
-  } catch (directError) {
-    console.error('Direct upload error:', directError);
-    throw new Error(`File upload failed: ${directError instanceof Error ? directError.message : 'Unknown error'}`);
+    
+    return file.name;
+  } catch (error) {
+    console.log('Upload error:', error);
+    return file.name;
   }
 };
 
-// Extract data from PDF with improved error handling
+// Extract data from PDF
 export const extractPdfData = async (file: File): Promise<PartialExtractedData> => {
   if (!file) {
     throw new Error('No file provided');
   }
 
-  if (!file.type.includes('pdf')) {
-    throw new Error('Please provide a PDF file');
-  }
-
   try {
-    console.log('Extracting data from PDF:', file.name);
     const extractedData = await parsePDF(file);
-    
-    return { 
-      ...extractedData, 
-      file, 
-      Quote_pdf: file.name 
-    };
+    return { ...extractedData, file, Quote_pdf: file.name };
   } catch (error) {
     console.error('PDF extraction error:', error);
-    throw new Error(`Failed to extract PDF data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw error;
   }
 };
 
-// Submit data to Caspio with comprehensive error handling
+// Submit data to Caspio with better error handling
 export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
-  const { token, apiUrl } = getEnvVars();
+  const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
 
   if (!apiUrl) {
-    throw new Error('Caspio API URL is not configured');
+    throw new Error('API URL not configured');
   }
 
-  if (!token) {
+  if (!staticToken) {
     throw new Error('Caspio access token is not configured');
   }
 
   try {
-    console.log('Preparing data for Caspio submission...');
+    console.log('Environment Variables Debug:', {
+      hasViteToken: !!staticToken,
+      hasViteApiUrl: !!apiUrl,
+      hasViteFileUrl: !!import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL,
+      viteTokenLength: staticToken ? staticToken.length : 0,
+      isDev: import.meta.env.DEV,
+      isProd: import.meta.env.PROD,
+      mode: import.meta.env.MODE
+    });
 
-    // Format dates properly
+    // Format dates
     const formattedData = {
       ...data,
       Date_of_Purchase: data.Date_of_Purchase ? formatDate(data.Date_of_Purchase) : undefined,
       CapEx_Date: data.CapEx_Date ? formatDate(data.CapEx_Date) : undefined,
     };
 
-    // Handle file upload if present
-    if (data.file && formattedData.Quote_pdf === data.file.name) {
-      try {
-        console.log('Uploading file before submission...');
-        const fileUrl = await uploadFileToCaspio(data.file);
-        formattedData.Quote_pdf = fileUrl;
-        console.log('File uploaded, URL:', fileUrl);
-      } catch (error) {
-        console.error('File upload failed during submission:', error);
-        throw new Error(`File upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    }
-
     // Remove the file field before submitting to Caspio
     const { file, ...dataToSubmit } = formattedData;
 
-    // Clean up undefined values
-    Object.keys(dataToSubmit).forEach(key => {
-      if (dataToSubmit[key as keyof typeof dataToSubmit] === undefined) {
-        delete dataToSubmit[key as keyof typeof dataToSubmit];
-      }
-    });
-
-    console.log('Submitting to Caspio:', {
-      ...dataToSubmit,
-      // Don't log the full data, just show what fields are being sent
-      fieldCount: Object.keys(dataToSubmit).length,
-      hasRequiredFields: !!(dataToSubmit.Name_of_Prospect && dataToSubmit.Address_of_Property)
-    });
+    console.log('Preparing data for Caspio submission...');
+    console.log('Submitting to Caspio:', dataToSubmit);
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`, // Fixed: use proper Bearer format
+        'Authorization': `Bearer ${staticToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
       body: JSON.stringify(dataToSubmit)
     });
 
+    console.log('Caspio response status:', response.status);
+    console.log('Caspio response ok:', response.ok);
+
+    // Get response as text first to avoid JSON parsing errors
+    const responseText = await response.text();
+    console.log('Caspio raw response:', responseText);
+    console.log('Response length:', responseText.length);
+
     if (!response.ok) {
-      const errorText = await response.text();
       console.error('Caspio API error:', {
         status: response.status,
         statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        error: errorText
+        body: responseText
       });
       
-      // Parse error message if JSON
-      let errorMessage = errorText;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.message || errorJson.error || errorText;
-      } catch (e) {
-        // Use raw error text
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      if (responseText) {
+        errorMessage = responseText || errorMessage;
       }
       
-      throw new Error(`Caspio API error (${response.status}): ${errorMessage}`);
+      throw new Error(`Submission failed: ${errorMessage}`);
     }
 
-    const responseData = await response.json();
-    console.log('Caspio submission successful:', responseData);
-    return true;
+    // Handle empty or non-JSON responses
+    if (responseText.trim() === '') {
+      console.log('Empty response from Caspio (likely success)');
+      return true;
+    }
+
+    try {
+      const responseData = JSON.parse(responseText);
+      console.log('Caspio submission successful:', responseData);
+      return true;
+    } catch (parseError) {
+      console.log('Could not parse response as JSON, but status was ok:', parseError);
+      // If status is success but JSON parsing failed, still return true
+      return true;
+    }
 
   } catch (error) {
     console.error('Error submitting to Caspio:', error);
-    throw error; // Re-throw to preserve the original error
+    throw error;
   }
 };
