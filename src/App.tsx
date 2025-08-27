@@ -17,61 +17,35 @@ interface UserData {
   smsPhone?: string;
 }
 
-// DEBUG COMPONENT - Add this temporarily
-const EnvDebugger = () => {
-  const checkEnv = () => {
-    console.log('=== ENVIRONMENT DEBUG ===');
-    console.log('import.meta.env.DEV:', import.meta.env.DEV);
-    console.log('import.meta.env.PROD:', import.meta.env.PROD);
-    console.log('import.meta.env.MODE:', import.meta.env.MODE);
-    
-    // Check all VITE_ variables
-    const allEnv = import.meta.env;
-    console.log('All environment variables:', allEnv);
-    
-    Object.keys(allEnv).forEach(key => {
-      if (key.startsWith('VITE_')) {
-        console.log(`${key}:`, allEnv[key] ? `[SET - ${String(allEnv[key]).length} chars]` : '[NOT SET]');
-      }
-    });
-    
-    // Specific checks
-    console.log('VITE_CASPIO_ACCESS_TOKEN:', import.meta.env.VITE_CASPIO_ACCESS_TOKEN ? 'SET' : 'NOT SET');
-    console.log('VITE_CASPIO_API_URL:', import.meta.env.VITE_CASPIO_API_URL ? 'SET' : 'NOT SET');
-    console.log('VITE_CASPIO_FILE_UPLOAD_URL:', import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL ? 'SET' : 'NOT SET');
-    
-    // Show actual values (first 20 chars only for security)
-    if (import.meta.env.VITE_CASPIO_ACCESS_TOKEN) {
-      console.log('Token preview:', String(import.meta.env.VITE_CASPIO_ACCESS_TOKEN).substring(0, 20) + '...');
-    }
-    if (import.meta.env.VITE_CASPIO_API_URL) {
-      console.log('API URL:', import.meta.env.VITE_CASPIO_API_URL);
-    }
-    
-    console.log('=== END ENV DEBUG ===');
-  };
-
-  return (
-    <div className="p-4 bg-yellow-100 border border-yellow-400 rounded mb-6">
-      <h3 className="font-bold mb-2 text-yellow-800">🔍 Environment Debug (Remove this in production)</h3>
-      <button 
-        onClick={checkEnv}
-        className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-      >
-        Check Environment Variables
-      </button>
-      <p className="text-sm mt-2 text-yellow-700">
-        Click the button and check the browser console for environment variable status
-      </p>
-    </div>
-  );
-};
-
 const App: React.FC = () => {
   const [extractedData, setExtractedData] = useState<PartialExtractedData | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // DEBUG FUNCTION - Add this temporarily
+  const debugEnvironment = () => {
+    console.log('=== ENVIRONMENT DEBUG ===');
+    console.log('Environment mode:', import.meta.env.MODE);
+    console.log('Is production:', import.meta.env.PROD);
+    console.log('Is development:', import.meta.env.DEV);
+    
+    // Check specific variables
+    const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
+    const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
+    const fileUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
+    
+    console.log('VITE_CASPIO_ACCESS_TOKEN:', token ? `SET (${token.length} chars)` : 'NOT SET');
+    console.log('VITE_CASPIO_API_URL:', apiUrl ? `SET (${apiUrl})` : 'NOT SET');
+    console.log('VITE_CASPIO_FILE_UPLOAD_URL:', fileUrl ? `SET (${fileUrl})` : 'NOT SET');
+    
+    if (token) {
+      console.log('Token preview:', token.substring(0, 20) + '...');
+    }
+    
+    console.log('All env keys:', Object.keys(import.meta.env));
+    console.log('=== END ENV DEBUG ===');
+  };
 
   const handleFileUploadAndUserData = async (
     file: File,
@@ -100,6 +74,9 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
+      // Debug environment before submission
+      debugEnvironment();
+
       // First, upload the file
       const fileName = `RCGV_${userData.firstName} ${userData.lastName}_${extractedData.Address_of_Property}.pdf`;
       await uploadFileToCaspio(selectedFile);
@@ -142,8 +119,21 @@ const App: React.FC = () => {
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold text-center mb-8">PDF Data Extractor</h1>
         
-        {/* ADD THIS DEBUG COMPONENT TEMPORARILY */}
-        <EnvDebugger />
+        {/* TEMPORARY DEBUG SECTION */}
+        <div className="max-w-4xl mx-auto mb-6">
+          <div className="p-4 bg-yellow-100 border border-yellow-400 rounded">
+            <h3 className="font-bold mb-2 text-yellow-800">🔍 Debug Panel (Remove in production)</h3>
+            <button 
+              onClick={debugEnvironment}
+              className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 mr-2"
+            >
+              Check Environment
+            </button>
+            <p className="text-sm mt-2 text-yellow-700">
+              Click button → Open browser console (F12) → Check environment variables
+            </p>
+          </div>
+        </div>
         
         <div className="max-w-4xl mx-auto space-y-6">
           {!extractedData && (
