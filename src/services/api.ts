@@ -330,8 +330,8 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
         headers: {
           'Authorization': `Bearer ${config.token}`,
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-Submission-ID': submissionId // Add submission ID for tracking
+          'Accept': 'application/json'
+          // Removed X-Submission-ID - Caspio doesn't allow custom headers
         },
         body: JSON.stringify(dataToSubmit)
       });
