@@ -160,6 +160,8 @@ export const uploadFileToCaspio = async (file: File): Promise<string> => {
     return file.name;
   }
 };
+// Add this to your existing services/api.ts file
+
 
 // Submit data to Caspio with robust response handling
 export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
@@ -282,4 +284,19 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
     console.error('Error submitting to Caspio:', error);
     throw error;
   }
+  // Helper function to sanitize filename
+const sanitizeFileName = (text: string): string => {
+  return text
+    .replace(/[<>:"/\\|?*]/g, '') // Remove illegal filename characters
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+};
+
+// EXPORTED: Helper function to generate proper filename from PDF data
+export const generateFileName = (extractedData: PartialExtractedData): string => {
+  const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
+  const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
+  
+  return `RCGV_${prospectName}_${address}.pdf`;
+};
 };
