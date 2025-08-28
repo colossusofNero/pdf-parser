@@ -1,3 +1,4 @@
+// App.tsx - Fixed with correct filename format from PDF data
 import React, { useState } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { FileUpload } from './components/FileUpload';
@@ -17,61 +18,27 @@ interface UserData {
   smsPhone?: string;
 }
 
-// DEBUG COMPONENT - Add this temporarily
-const EnvDebugger = () => {
-  const checkEnv = () => {
-    console.log('=== ENVIRONMENT DEBUG ===');
-    console.log('import.meta.env.DEV:', import.meta.env.DEV);
-    console.log('import.meta.env.PROD:', import.meta.env.PROD);
-    console.log('import.meta.env.MODE:', import.meta.env.MODE);
-    
-    // Check all VITE_ variables
-    const allEnv = import.meta.env;
-    console.log('All environment variables:', allEnv);
-    
-    Object.keys(allEnv).forEach(key => {
-      if (key.startsWith('VITE_')) {
-        console.log(`${key}:`, allEnv[key] ? `[SET - ${String(allEnv[key]).length} chars]` : '[NOT SET]');
-      }
-    });
-    
-    // Specific checks
-    console.log('VITE_CASPIO_ACCESS_TOKEN:', import.meta.env.VITE_CASPIO_ACCESS_TOKEN ? 'SET' : 'NOT SET');
-    console.log('VITE_CASPIO_API_URL:', import.meta.env.VITE_CASPIO_API_URL ? 'SET' : 'NOT SET');
-    console.log('VITE_CASPIO_FILE_UPLOAD_URL:', import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL ? 'SET' : 'NOT SET');
-    
-    // Show actual values (first 20 chars only for security)
-    if (import.meta.env.VITE_CASPIO_ACCESS_TOKEN) {
-      console.log('Token preview:', String(import.meta.env.VITE_CASPIO_ACCESS_TOKEN).substring(0, 20) + '...');
-    }
-    if (import.meta.env.VITE_CASPIO_API_URL) {
-      console.log('API URL:', import.meta.env.VITE_CASPIO_API_URL);
-    }
-    
-    console.log('=== END ENV DEBUG ===');
-  };
-
-  return (
-    <div className="p-4 bg-yellow-100 border border-yellow-400 rounded mb-6">
-      <h3 className="font-bold mb-2 text-yellow-800">🔍 Environment Debug (Remove this in production)</h3>
-      <button 
-        onClick={checkEnv}
-        className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-      >
-        Check Environment Variables
-      </button>
-      <p className="text-sm mt-2 text-yellow-700">
-        Click the button and check the browser console for environment variable status
-      </p>
-    </div>
-  );
-};
-
 const App: React.FC = () => {
   const [extractedData, setExtractedData] = useState<PartialExtractedData | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Helper function to sanitize filename
+  const sanitizeFileName = (text: string): string => {
+    return text
+      .replace(/[<>:"/\\|?*]/g, '') // Remove illegal filename characters
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  };
+
+  // Helper function to generate proper filename from PDF data
+  const generateFileName = (extractedData: PartialExtractedData): string => {
+    const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
+    const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
+    
+    return `RCGV_${prospectName}_${address}.pdf`;
+  };
 
   const handleFileUploadAndUserData = async (
     file: File,
@@ -100,88 +67,105 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
-      // First, upload the file
-      const fileName = `RCGV_${userData.firstName} ${userData.lastName}_${extractedData.Address_of_Property}.pdf`;
-      await uploadFileToCaspio(selectedFile);
+      // Generate filename using the EXTRACTED PDF data (not user input)
+      const fileName = generateFileName(extractedData);
+      console.log('Generated filename:', fileName);
+
+      // First, upload the file with the correct name
+      const uploadedFileName = await uploadFileToCaspio(selectedFile, fileName);
+      console.log('File uploaded with name:', uploadedFileName);
 
       // Create submission data without the file object
       const { file, ...restExtractedData } = extractedData;
       const submissionData: PartialExtractedData = {
         ...restExtractedData,
+        // Use user input for contact fields
         Contact_Name_First: userData.firstName.trim(),
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
+        // Use the filename generated from extracted PDF data
         Quote_pdf: `/${fileName}` // Include the forward slash
       };
 
       // Log the data being submitted to verify fields are present
-      console.log('Submitting data:', submissionData);
+      console.log('Submitting data with filename:', submissionData.Quote_pdf);
+      console.log('Full submission data:', submissionData);
 
       await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');
       
+      // Reset form after successful submission
       setExtractedData(null);
       setUserData(null);
       setSelectedFile(null);
     } catch (error) {
-      console.error('Submission error:', error);
-      if (error instanceof Error) {
-        toast.error(`Failed to submit: ${error.message}`);
-      } else {
-        toast.error('Failed to submit to Caspio');
-      }
+      console.error('Error submitting to Caspio:', error);
+      toast.error(`Failed to submit data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleEditData = (field: string, value: any) => {
+    if (!extractedData) return;
+    
+    setExtractedData({
+      ...extractedData,
+      [field]: value
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Toaster position="top-right" />
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-center mb-8">PDF Data Extractor</h1>
-        
-        {/* ADD THIS DEBUG COMPONENT TEMPORARILY */}
-        <EnvDebugger />
-        
+    <div className="min-h-screen bg-gray-100 py-8">
+      <div className="container mx-auto px-4">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            RCG Valuation PDF Processor
+          </h1>
+          <p className="text-gray-600">
+            Upload your cost segregation quote PDF to extract and submit data to Caspio
+          </p>
+        </div>
+
         <div className="max-w-4xl mx-auto space-y-6">
-          {!extractedData && (
+          {!extractedData ? (
             <Card>
               <CardContent className="p-6">
-                <h2 className="text-xl font-semibold mb-4">Upload PDF & Enter Information</h2>
                 <FileUpload 
-                  onFileSelect={handleFileUploadAndUserData}
+                  onFileUpload={handleFileUploadAndUserData}
                   isLoading={isLoading}
                 />
               </CardContent>
             </Card>
-          )}
-
-          {extractedData && (
-            <div className="space-y-6">
-              <Card>
-                <CardContent className="p-6">
-                  <h2 className="text-xl font-semibold mb-4">Extracted Data</h2>
-                  <PdfDataDisplay data={extractedData} />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <button
-                    onClick={handleSubmitToCaspio}
-                    disabled={isLoading}
-                    className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 transition-colors"
-                  >
-                    {isLoading ? 'Submitting...' : 'Submit to Caspio'}
-                  </button>
-                </CardContent>
-              </Card>
-            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="font-medium text-blue-800 mb-2">File Information</h3>
+                  <p className="text-sm text-blue-700">
+                    <strong>Original file:</strong> {selectedFile?.name || 'Unknown'}
+                  </p>
+                  <p className="text-sm text-blue-700">
+                    <strong>Generated Caspio filename:</strong> {generateFileName(extractedData)}
+                  </p>
+                  <p className="text-sm text-blue-600 mt-1">
+                    This filename is generated from the prospect name and property address in the PDF
+                  </p>
+                </div>
+                
+                <PdfDataDisplay 
+                  data={extractedData}
+                  onEdit={handleEditData}
+                  onSubmit={handleSubmitToCaspio}
+                  isProcessing={isLoading}
+                />
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>
+      <Toaster position="top-right" />
     </div>
   );
 };
