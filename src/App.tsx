@@ -57,7 +57,8 @@ const App: React.FC = () => {
       console.log('Generated filename:', fileName);
 
       // First, upload the file with the correct name
-      const uploadedFileName = await uploadFileToCaspio(selectedFile, fileName);
+      // Note: Your current uploadFileToCaspio only takes one parameter, so we'll pass the filename via Quote_pdf
+      const uploadedFileName = await uploadFileToCaspio(selectedFile);
       console.log('File uploaded with name:', uploadedFileName);
 
       // Create submission data without the file object
