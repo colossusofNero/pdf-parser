@@ -7,7 +7,6 @@ import {
   extractPdfData, 
   submitToCaspio,
   uploadFileToCaspio,
-  generateFileName,
   type PartialExtractedData 
 } from './services/api';
 import { Card, CardContent } from './components/ui/card';
