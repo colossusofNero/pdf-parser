@@ -7,6 +7,7 @@ import {
   extractPdfData, 
   submitToCaspio,
   uploadFileToCaspio,
+  generateFileName,
   type PartialExtractedData 
 } from './services/api';
 import { Card, CardContent } from './components/ui/card';
@@ -67,9 +68,6 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
-      // Import the generateFileName function from api service
-      const { generateFileName } = await import('./services/api');
-      
       // Generate filename using the EXTRACTED PDF data (not user input)
       const fileName = generateFileName(extractedData);
       console.log('Generated filename:', fileName);
@@ -150,7 +148,7 @@ const App: React.FC = () => {
                     <strong>Original file:</strong> {selectedFile?.name || 'Unknown'}
                   </p>
                   <p className="text-sm text-blue-700">
-                    <strong>Generated Caspio filename:</strong> RCGV_{extractedData.Name_of_Prospect}_{extractedData.Address_of_Property}.pdf
+                    <strong>Generated Caspio filename:</strong> {generateFileName(extractedData)}
                   </p>
                   <p className="text-sm text-blue-600 mt-1">
                     This filename is generated from the prospect name and property address in the PDF
