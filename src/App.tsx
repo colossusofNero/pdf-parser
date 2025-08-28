@@ -67,12 +67,16 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
+      // Import the generateFileName function from api service
+      const { generateFileName } = await import('./services/api');
+      
       // Generate filename using the EXTRACTED PDF data (not user input)
       const fileName = generateFileName(extractedData);
       console.log('Generated filename:', fileName);
 
       // First, upload the file with the correct name
-      await uploadFileToCaspio(selectedFile);
+      const uploadedFileName = await uploadFileToCaspio(selectedFile, fileName);
+      console.log('File uploaded with name:', uploadedFileName);
 
       // Create submission data without the file object
       const { file, ...restExtractedData } = extractedData;
@@ -100,7 +104,7 @@ const App: React.FC = () => {
       setSelectedFile(null);
     } catch (error) {
       console.error('Error submitting to Caspio:', error);
-      toast.error('Failed to submit data to Caspio');
+      toast.error(`Failed to submit data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -146,7 +150,7 @@ const App: React.FC = () => {
                     <strong>Original file:</strong> {selectedFile?.name || 'Unknown'}
                   </p>
                   <p className="text-sm text-blue-700">
-                    <strong>Generated Caspio filename:</strong> {generateFileName(extractedData)}
+                    <strong>Generated Caspio filename:</strong> RCGV_{extractedData.Name_of_Prospect}_{extractedData.Address_of_Property}.pdf
                   </p>
                   <p className="text-sm text-blue-600 mt-1">
                     This filename is generated from the prospect name and property address in the PDF
