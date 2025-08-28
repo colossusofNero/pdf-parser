@@ -1,6 +1,4 @@
-// services/api.ts - Minimal working version
-import { parsePDF } from './pdf/index';
-
+// services/api.ts - Minimal working version without PDF imports
 export interface ExtractedData {
   Name_of_Prospect: string;
   Address_of_Property: string;
@@ -52,16 +50,35 @@ const formatDate = (dateString?: string): string => {
   }
 };
 
-// Extract data from PDF
+// Extract data from PDF using serverless endpoint
 export const extractPdfData = async (file: File): Promise<PartialExtractedData> => {
   if (!file) {
     throw new Error('No file provided');
   }
 
   try {
-    console.log('Extracting data from PDF:', file.name);
-    const extractedData = await parsePDF(file);
-    return { ...extractedData, file };
+    console.log('Extracting data from PDF via serverless:', file.name);
+    
+    // Create form data with the file
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Send to serverless endpoint
+    const response = await fetch('/api/extract-pdf', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`PDF extraction failed: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const result = await response.json();
+    return {
+      ...result.data,
+      file
+    };
   } catch (error) {
     console.error('PDF extraction error:', error);
     throw error;
