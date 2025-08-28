@@ -1,4 +1,4 @@
-// services/api.ts - Robust error handling for Caspio responses
+// services/api.ts - Fixed syntax errors and added generateFileName
 import { parsePDF } from './pdfParser';
 
 export interface ExtractedData {
@@ -33,6 +33,22 @@ export interface ExtractedData {
 }
 
 export type PartialExtractedData = Partial<ExtractedData>;
+
+// Helper function to sanitize filename
+const sanitizeFileName = (text: string): string => {
+  return text
+    .replace(/[<>:"/\\|?*]/g, '') // Remove illegal filename characters
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+};
+
+// EXPORTED: Helper function to generate proper filename from PDF data
+export const generateFileName = (extractedData: PartialExtractedData): string => {
+  const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
+  const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
+  
+  return `RCGV_${prospectName}_${address}.pdf`;
+};
 
 // Get environment config
 const getEnvironmentConfig = () => {
@@ -86,7 +102,7 @@ export const extractPdfData = async (file: File): Promise<PartialExtractedData> 
   try {
     console.log('Extracting data from PDF:', file.name);
     const extractedData = await parsePDF(file);
-    return { ...extractedData, file, Quote_pdf: file.name };
+    return { ...extractedData, file };
   } catch (error) {
     console.error('PDF extraction error:', error);
     throw error;
@@ -160,8 +176,6 @@ export const uploadFileToCaspio = async (file: File): Promise<string> => {
     return file.name;
   }
 };
-// Add this to your existing services/api.ts file
-
 
 // Submit data to Caspio with robust response handling
 export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
@@ -284,19 +298,4 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
     console.error('Error submitting to Caspio:', error);
     throw error;
   }
-  // Helper function to sanitize filename
-const sanitizeFileName = (text: string): string => {
-  return text
-    .replace(/[<>:"/\\|?*]/g, '') // Remove illegal filename characters
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .trim();
-};
-
-// EXPORTED: Helper function to generate proper filename from PDF data
-export const generateFileName = (extractedData: PartialExtractedData): string => {
-  const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
-  const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
-  
-  return `RCGV_${prospectName}_${address}.pdf`;
-};
 };
