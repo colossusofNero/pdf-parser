@@ -1,4 +1,4 @@
-// api/proxy-upload.ts
+// api/upload-file.ts - Fixed to handle proper filename from PDF data
 import { NextApiRequest, NextApiResponse } from 'next';
 import formidable from 'formidable';
 import fs from 'fs';
@@ -10,133 +10,119 @@ export const config = {
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
   if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST', 'OPTIONS']);
-    return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
-  }
-
-  // Get environment variables (with VITE_ prefix for server-side)
-  const fileUploadUrl = process.env.VITE_CASPIO_FILE_UPLOAD_URL;
-  const token = process.env.VITE_CASPIO_ACCESS_TOKEN;
-
-  console.log('Proxy upload - Environment check:', {
-    hasFileUploadUrl: !!fileUploadUrl,
-    hasToken: !!token,
-    tokenLength: token?.length || 0
-  });
-
-  if (!fileUploadUrl || !token) {
-    console.error('Missing Caspio configuration:', {
-      fileUploadUrl: !!fileUploadUrl,
-      token: !!token
-    });
-    return res.status(500).json({ 
-      error: 'Caspio configuration missing',
-      details: 'Missing file upload URL or access token'
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const form = formidable({
-      maxFileSize: 10 * 1024 * 1024, // 10MB limit
-      keepExtensions: true,
+    const form = new formidable.IncomingForm();
+    form.parse(req, async (err, fields, files) => {
+      if (err) {
+        return res.status(500).json({ error: 'File upload failed' });
+      }
+
+      const file = files.file[0];
+      if (!file || !file.filepath) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      // Validate file size
+      const stats = fs.statSync(file.filepath);
+      const fileSizeInMB = stats.size / (1024 * 1024);
+      if (fileSizeInMB > 10) { // Limit to 10MB
+        return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+      }
+
+      // Get Caspio credentials from environment variables
+      const fileUploadUrl = process.env.CASPIO_FILE_UPLOAD_URL;
+      const accessToken = process.env.CASPIO_ACCESS_TOKEN;
+
+      if (!fileUploadUrl || !accessToken) {
+        return res.status(500).json({ error: 'Missing Caspio configuration' });
+      }
+
+      try {
+        // Extract filename from fields if provided (this comes from the frontend)
+        const customFileName = fields.fileName ? fields.fileName[0] : null;
+        
+        // Use custom filename if provided, otherwise use original
+        const finalFileName = customFileName || file.originalFilename || 'upload.pdf';
+        
+        console.log('Uploading file with name:', finalFileName);
+
+        // Create form data
+        const formData = new FormData();
+        const fileBuffer = fs.readFileSync(file.filepath);
+        formData.append('file', new Blob([fileBuffer], { type: 'application/pdf' }), finalFileName);
+
+        // Upload to Caspio
+        const response = await fetch(fileUploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': '*/*'
+          },
+          body: formData
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('File upload failed:', {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Object.fromEntries(response.headers.entries()),
+            error: errorText,
+            fileName: finalFileName
+          });
+          return res.status(response.status).json({ 
+            error: `File upload failed: ${errorText}`,
+            details: { status: response.status, fileName: finalFileName }
+          });
+        }
+
+        // Parse response
+        let responseData;
+        try {
+          responseData = await response.json();
+        } catch (e) {
+          // If JSON parsing fails, create a simple success response
+          responseData = { 
+            success: true,
+            fileUrl: `/${finalFileName}`,
+            fileName: finalFileName 
+          };
+        }
+
+        console.log('File uploaded successfully:', responseData);
+        return res.status(200).json({ 
+          success: true, 
+          data: {
+            ...responseData,
+            fileUrl: `/${finalFileName}`,
+            fileName: finalFileName
+          }
+        });
+      } catch (error) {
+        console.error('Error uploading to Caspio:', error);
+        return res.status(500).json({
+          error: 'Error uploading to Caspio',
+          details: error instanceof Error ? error.message : 'Unknown upload error'
+        });
+      } finally {
+        // Clean up temporary file
+        try {
+          if (file.filepath && fs.existsSync(file.filepath)) {
+            fs.unlinkSync(file.filepath);
+          }
+        } catch (cleanupError) {
+          console.warn('Could not clean up temporary file:', cleanupError);
+        }
+      }
     });
-
-    const [fields, files] = await form.parse(req);
-    
-    // Handle both 'File' and 'file' field names
-    const uploadedFile = files.File?.[0] || files.file?.[0];
-    
-    if (!uploadedFile || !uploadedFile.filepath) {
-      return res.status(400).json({ 
-        error: 'No file provided',
-        receivedFields: Object.keys(fields),
-        receivedFiles: Object.keys(files)
-      });
-    }
-
-    console.log('File received:', {
-      originalFilename: uploadedFile.originalFilename,
-      size: uploadedFile.size,
-      mimetype: uploadedFile.mimetype
-    });
-
-    // Create FormData for Caspio upload
-    const formData = new FormData();
-    const fileBuffer = fs.readFileSync(uploadedFile.filepath);
-    const blob = new Blob([fileBuffer], { type: uploadedFile.mimetype || 'application/pdf' });
-    
-    formData.append('file', blob, uploadedFile.originalFilename || 'upload.pdf');
-
-    console.log('Uploading to Caspio:', fileUploadUrl);
-
-    // Upload to Caspio
-    const response = await fetch(fileUploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      },
-      body: formData
-    });
-
-    // Clean up temporary file
-    try {
-      fs.unlinkSync(uploadedFile.filepath);
-    } catch (cleanupError) {
-      console.warn('Failed to cleanup temp file:', cleanupError);
-    }
-
-    console.log('Caspio response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Caspio upload failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        error: errorText
-      });
-      
-      return res.status(response.status).json({
-        error: 'Caspio upload failed',
-        details: errorText,
-        status: response.status
-      });
-    }
-
-    // Parse Caspio response
-    let responseData;
-    try {
-      responseData = await response.json();
-      console.log('Caspio upload successful:', responseData);
-    } catch (parseError) {
-      console.log('Could not parse Caspio response as JSON, assuming success');
-      responseData = { 
-        fileUrl: uploadedFile.originalFilename,
-        success: true
-      };
-    }
-
-    return res.status(200).json({
-      success: true,
-      fileUrl: responseData.fileUrl || responseData.data?.fileUrl || uploadedFile.originalFilename,
-      data: responseData
-    });
-
   } catch (error) {
-    console.error('Proxy upload error:', error);
-    return res.status(500).json({
-      error: 'Failed to upload file to Caspio',
+    console.error('Server error:', error);
+    return res.status(500).json({ 
+      error: 'Server error',
       details: error instanceof Error ? error.message : String(error)
     });
   }
