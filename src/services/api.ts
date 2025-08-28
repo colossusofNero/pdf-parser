@@ -1,3 +1,4 @@
+// services/api.ts - Corrected version with proper serverless integration
 import { parsePDF } from './pdfParser';
 
 export interface ExtractedData {
@@ -33,6 +34,22 @@ export interface ExtractedData {
 
 export type PartialExtractedData = Partial<ExtractedData>;
 
+// Helper function to sanitize filename
+const sanitizeFileName = (text: string): string => {
+  return text
+    .replace(/[<>:"/\\|?*]/g, '') // Remove illegal filename characters
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+};
+
+// Helper function to generate proper filename from extracted data
+export const generateFileName = (extractedData: PartialExtractedData): string => {
+  const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
+  const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
+  
+  return `RCGV_${prospectName}_${address}.pdf`;
+};
+
 // Date formatting
 const formatDate = (dateString?: string): string => {
   if (!dateString) return '';
@@ -66,7 +83,7 @@ const formatDate = (dateString?: string): string => {
   }
 };
 
-// Extract data from PDF
+// Extract data from PDF using client-side parsing
 export const extractPdfData = async (file: File): Promise<PartialExtractedData> => {
   if (!file) {
     throw new Error('No file provided');
@@ -74,17 +91,51 @@ export const extractPdfData = async (file: File): Promise<PartialExtractedData> 
 
   try {
     const extractedData = await parsePDF(file);
-    return { ...extractedData, file, Quote_pdf: file.name };
+    // Don't set Quote_pdf here - it will be set during submission with proper filename
+    return { 
+      ...extractedData, 
+      file 
+    };
   } catch (error) {
     console.error('PDF extraction error:', error);
     throw error;
   }
 };
 
-// File upload function
-export const uploadFileToCaspio = async (file: File): Promise<string> => {
-  console.log('File upload requested for:', file.name);
-  return file.name;
+// File upload function using serverless endpoint with proper filename
+export const uploadFileToCaspio = async (
+  file: File, 
+  customFileName: string
+): Promise<string> => {
+  if (!file) {
+    throw new Error('No file provided');
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('fileName', customFileName); // Pass the custom filename
+    
+    console.log('Uploading file to serverless endpoint with name:', customFileName);
+    
+    const response = await fetch('/api/upload-file', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`File upload failed: ${response.status} - ${errorData}`);
+    }
+
+    const responseData = await response.json();
+    console.log('File upload response:', responseData);
+    
+    return responseData.data.fileUrl || responseData.data.fileName || customFileName;
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    throw new Error(error instanceof Error ? error.message : 'Unknown upload error');
+  }
 };
 
 // Submit data to Caspio with comprehensive diagnostic logging
@@ -114,7 +165,7 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
   }
 
   try {
-    // Format dates
+    // Format dates properly
     const formattedData = {
       ...data,
       Date_of_Purchase: data.Date_of_Purchase ? formatDate(data.Date_of_Purchase) : undefined,
@@ -135,7 +186,8 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
         Name_of_Prospect: dataToSubmit.Name_of_Prospect || 'MISSING',
         Address_of_Property: dataToSubmit.Address_of_Property || 'MISSING',
         Purchase_Price: dataToSubmit.Purchase_Price || 'MISSING',
-        Email_from_App: dataToSubmit.Email_from_App || 'MISSING'
+        Email_from_App: dataToSubmit.Email_from_App || 'MISSING',
+        Quote_pdf: dataToSubmit.Quote_pdf || 'MISSING'
       },
       payloadSize: JSON.stringify(dataToSubmit).length
     });
@@ -143,21 +195,20 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
     console.log('📋 FULL PAYLOAD TO CASPIO:');
     console.log(JSON.stringify(dataToSubmit, null, 2));
 
-    // Make the request with detailed logging
-    console.log('🌐 Making request to:', config.apiUrl);
+    // Use serverless endpoint instead of direct Caspio call
+    console.log('🌐 Making request to serverless endpoint: /api/submit-to-caspio');
     
     const startTime = Date.now();
-    const response = await fetch(config.apiUrl, {
+    const response = await fetch('/api/submit-to-caspio', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(dataToSubmit)
     });
     const endTime = Date.now();
 
-    console.log('📡 CASPIO RESPONSE ANALYSIS:', {
+    console.log('📡 SERVERLESS RESPONSE ANALYSIS:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
@@ -190,52 +241,50 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
 
     // Analyze the response
     if (!response.ok) {
-      console.error('❌ CASPIO REJECTION - Request was not successful');
+      console.error('❌ SERVERLESS ENDPOINT ERROR - Request was not successful');
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       
       if (responseText) {
         try {
           const errorJson = JSON.parse(responseText);
-          errorMessage = errorJson.message || errorJson.error || errorMessage;
+          errorMessage = errorJson.error || errorJson.message || errorMessage;
           console.log('📋 PARSED ERROR:', errorJson);
+          
+          // Log additional details if available
+          if (errorJson.details) {
+            console.log('📋 ERROR DETAILS:', errorJson.details);
+          }
         } catch (e) {
           console.log('📋 ERROR RESPONSE NOT JSON');
           errorMessage = responseText;
         }
       }
       
-      throw new Error(`Caspio API rejected request: ${errorMessage}`);
+      throw new Error(`Submission failed: ${errorMessage}`);
     }
 
-    // Handle successful but empty response
+    // Handle successful response
     if (responseText.trim() === '') {
       console.log('⚠️  EMPTY SUCCESS RESPONSE - This might indicate an issue');
-      console.log('🔍 POTENTIAL CAUSES:');
-      console.log('  1. Authentication succeeded but write failed silently');
-      console.log('  2. Data format was rejected but no error was returned');
-      console.log('  3. Required fields are missing');
-      console.log('  4. Token has read-only permissions');
-      
-      // For diagnostic purposes, let's NOT assume this is success
-      throw new Error('Caspio returned empty response - data may not have been saved. Check Caspio directly.');
+      throw new Error('Server returned empty response - data may not have been saved. Check Caspio directly.');
     }
 
     // Try to parse successful response
     try {
       const responseData = JSON.parse(responseText);
-      console.log('✅ CASPIO SUCCESS - Data parsed:', responseData);
+      console.log('✅ SUBMISSION SUCCESS - Data parsed:', responseData);
       
       // Check if the response indicates actual success
-      if (responseData.Result && Array.isArray(responseData.Result)) {
-        console.log(`✅ SUCCESS CONFIRMED - ${responseData.Result.length} record(s) created`);
-        return true;
-      } else if (responseData.success || responseData.Success) {
+      if (responseData.success || responseData.Success) {
         console.log('✅ SUCCESS CONFIRMED - Success flag present');
+        return true;
+      } else if (responseData.data || responseData.Result) {
+        console.log('✅ SUCCESS CONFIRMED - Data/Result present');
         return true;
       } else {
         console.log('⚠️  SUCCESS UNCLEAR - Response format unexpected');
         console.log('📋 Response data:', responseData);
-        return true; // Assume success if we got valid JSON
+        return true; // Assume success if we got valid JSON with HTTP 200
       }
     } catch (parseError) {
       console.log('✅ SUCCESS - Non-JSON response but HTTP 200');
@@ -244,7 +293,7 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
     }
 
   } catch (error) {
-    console.error('💥 CASPIO SUBMISSION FAILED');
+    console.error('💥 SUBMISSION FAILED');
     console.error('📋 Error details:', error);
     console.log('🔍 DIAGNOSTIC COMPLETE - CHECK LOGS ABOVE');
     throw error;
