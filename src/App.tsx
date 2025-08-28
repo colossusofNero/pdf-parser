@@ -197,7 +197,7 @@ const App: React.FC = () => {
             <Card>
               <CardContent className="p-6">
                 <FileUpload 
-                  onFileUpload={handleFileUploadAndUserData}
+                  onFileSelect={handleFileUploadAndUserData}
                   isLoading={isLoading}
                 />
               </CardContent>
