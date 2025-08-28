@@ -1,15 +1,41 @@
-// App.tsx - Simple version with local filename generation
+// App.tsx - Simple version to isolate the function error
 import React, { useState } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { FileUpload } from './components/FileUpload';
 import { PdfDataDisplay } from './components/PdfDataDisplay';
-import { 
-  extractPdfData, 
-  submitToCaspio,
-  uploadFileToCaspio,
-  type PartialExtractedData 
-} from './services/api';
 import { Card, CardContent } from './components/ui/card';
+
+// Define types locally to avoid import issues
+interface ExtractedData {
+  Name_of_Prospect?: string;
+  Address_of_Property?: string;
+  Zip_Code?: string;
+  Purchase_Price?: number;
+  Capital_Improvements_Amount?: number;
+  Building_Value?: number;
+  Know_Land_Value?: number;
+  Date_of_Purchase?: string;
+  SqFt_Building?: number;
+  Acres_Land?: number;
+  Year_Built?: number;
+  Bid_Amount_Original?: number;
+  Pay_Upfront?: number;
+  Pay_50_50_Amount?: number;
+  Pay_Over_Time?: number;
+  Rush_Fee?: number;
+  Multiple_Properties_Quote?: number;
+  First_Year_Bonus_Quote?: number;
+  Tax_Year?: number;
+  Tax_Deadline_Quote?: string;
+  Contact_Name_First?: string;
+  Contact_Name_Last?: string;
+  Contact_Phone?: string;
+  Email_from_App?: string;
+  Quote_pdf?: string;
+  CapEx_Date?: string;
+  Type_of_Property_Quote?: string;
+  file?: File;
+}
 
 interface UserData {
   firstName: string;
@@ -19,25 +45,69 @@ interface UserData {
 }
 
 const App: React.FC = () => {
-  const [extractedData, setExtractedData] = useState<PartialExtractedData | null>(null);
+  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Helper function to sanitize filename (local to avoid import issues)
-  const sanitizeFileName = (text: string): string => {
-    return text
-      .replace(/[<>:"/\\|?*]/g, '') // Remove illegal filename characters
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
+  // Simple filename generation - no external function calls
+  const createFileName = (data: ExtractedData): string => {
+    const name = (data.Name_of_Prospect || 'Unknown').replace(/[<>:"/\\|?*]/g, '').trim();
+    const address = (data.Address_of_Property || 'Unknown Address').replace(/[<>:"/\\|?*]/g, '').trim();
+    return `RCGV_${name}_${address}.pdf`;
   };
 
-  // Generate proper filename from extracted PDF data
-  const generateFileName = (extractedData: PartialExtractedData): string => {
-    const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
-    const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
+  // Simple PDF extraction using serverless
+  const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/extract-pdf', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`PDF extraction failed: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const result = await response.json();
+    return { ...result.data, file };
+  };
+
+  // Simple file upload
+  const uploadFile = async (file: File): Promise<void> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/upload-file', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`File upload failed: ${response.status} - ${errorData}`);
+    }
+  };
+
+  // Simple submission
+  const submitData = async (data: ExtractedData): Promise<void> => {
+    const { file, ...dataToSubmit } = data;
     
-    return `RCGV_${prospectName}_${address}.pdf`;
+    const response = await fetch('/api/submit-to-caspio', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(dataToSubmit)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Submission failed: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
   };
 
   const handleFileUploadAndUserData = async (
@@ -46,7 +116,7 @@ const App: React.FC = () => {
   ) => {
     setIsLoading(true);
     try {
-      const extractedPdfData = await extractPdfData(file);
+      const extractedPdfData = await extractDataFromPDF(file);
       setExtractedData(extractedPdfData);
       setUserData(userInputData);
       setSelectedFile(file);
@@ -67,33 +137,29 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
-      // Generate filename using the EXTRACTED PDF data (not user input)
-      const fileName = generateFileName(extractedData);
+      // Generate filename using extracted data
+      const fileName = createFileName(extractedData);
       console.log('Generated filename:', fileName);
 
-      // First, upload the file
-      await uploadFileToCaspio(selectedFile);
+      // Upload file
+      await uploadFile(selectedFile);
 
-      // Create submission data without the file object
-      const { file, ...restExtractedData } = extractedData;
-      const submissionData: PartialExtractedData = {
-        ...restExtractedData,
-        // Use user input for contact fields
+      // Prepare submission data
+      const submissionData: ExtractedData = {
+        ...extractedData,
         Contact_Name_First: userData.firstName.trim(),
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
-        // Use the filename generated from extracted PDF data
-        Quote_pdf: `/${fileName}` // Include the forward slash
+        Quote_pdf: `/${fileName}`
       };
 
-      console.log('Submitting data with filename:', submissionData.Quote_pdf);
-      console.log('Full submission data:', submissionData);
+      console.log('Submitting data:', submissionData);
 
-      await submitToCaspio(submissionData);
+      await submitData(submissionData);
       toast.success('Data successfully submitted to Caspio!');
       
-      // Reset form after successful submission
+      // Reset form
       setExtractedData(null);
       setUserData(null);
       setSelectedFile(null);
@@ -145,7 +211,7 @@ const App: React.FC = () => {
                     <strong>Original file:</strong> {selectedFile?.name || 'Unknown'}
                   </p>
                   <p className="text-sm text-blue-700">
-                    <strong>Generated Caspio filename:</strong> {generateFileName(extractedData)}
+                    <strong>Generated Caspio filename:</strong> {createFileName(extractedData)}
                   </p>
                   <p className="text-sm text-blue-600 mt-1">
                     This filename is generated from the prospect name and property address in the PDF
