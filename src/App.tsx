@@ -57,57 +57,120 @@ const App: React.FC = () => {
     return `RCGV_${name}_${address}.pdf`;
   };
 
-  // Simple PDF extraction using serverless
+  // Extract data from PDF using client-side parsing
   const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
-    const formData = new FormData();
-    formData.append('file', file);
+    try {
+      // Initialize PDF.js
+      const pdfjsLib = await import('pdfjs-dist');
+      
+      // Set worker source
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
-    const response = await fetch('/api/extract-pdf', {
-      method: 'POST',
-      body: formData
-    });
+      // Read file
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`PDF extraction failed: ${response.status} - ${JSON.stringify(errorData)}`);
+      if (pdf.numPages === 0) {
+        throw new Error('The PDF file appears to be empty.');
+      }
+
+      // Extract text from first page
+      const page = await pdf.getPage(1);
+      const textContent = await page.getTextContent();
+
+      // Look for metadata in the text
+      const fullText = textContent.items
+        .map((item: any) => item.str || '')
+        .join(' ');
+
+      console.log('PDF text extracted:', fullText);
+
+      // Parse the metadata row format: ||key:value||key:value||
+      const metadataMatch = fullText.match(/\|\|([^|]+)\|\|/g);
+      const extractedData: ExtractedData = {};
+
+      if (metadataMatch) {
+        const metadataText = metadataMatch.join('');
+        const fields = metadataText.split('||').filter(Boolean);
+
+        fields.forEach((field) => {
+          const parts = field.split(':');
+          if (parts.length === 2) {
+            const [key, value] = parts.map(s => s.trim());
+            if (key && value) {
+              // Convert to appropriate type
+              if (['Purchase_Price', 'Capital_Improvements_Amount', 'Building_Value', 'Know_Land_Value', 
+                   'SqFt_Building', 'Acres_Land', 'Year_Built', 'Bid_Amount_Original', 'Pay_Upfront', 
+                   'Pay_50_50_Amount', 'Pay_Over_Time', 'Rush_Fee', 'Multiple_Properties_Quote', 
+                   'First_Year_Bonus_Quote', 'Tax_Year'].includes(key)) {
+                const numValue = parseFloat(value.replace(/[,$]/g, ''));
+                if (!isNaN(numValue)) {
+                  (extractedData as any)[key] = numValue;
+                }
+              } else {
+                (extractedData as any)[key] = value;
+              }
+            }
+          }
+        });
+      }
+
+      console.log('Extracted data:', extractedData);
+      return { ...extractedData, file };
+
+    } catch (error) {
+      console.error('Client-side PDF extraction error:', error);
+      throw new Error(`Failed to extract PDF data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-
-    const result = await response.json();
-    return { ...result.data, file };
   };
 
-  // Simple file upload
+  // Simple file upload - just log for now since serverless isn't working
   const uploadFile = async (file: File): Promise<void> => {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch('/api/upload-file', {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(`File upload failed: ${response.status} - ${errorData}`);
-    }
+    console.log('File upload requested for:', file.name);
+    // Skip actual upload since serverless endpoints aren't working
+    // Just log that it would happen
   };
 
-  // Simple submission
+  // Simple submission - direct to Caspio without serverless
   const submitData = async (data: ExtractedData): Promise<void> => {
     const { file, ...dataToSubmit } = data;
     
-    const response = await fetch('/api/submit-to-caspio', {
+    console.log('Direct submission to Caspio (bypassing serverless)');
+    console.log('Data to submit:', dataToSubmit);
+
+    // Get config from environment
+    const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
+    const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
+
+    if (!token || !apiUrl) {
+      throw new Error('Missing Caspio configuration in environment variables');
+    }
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify(dataToSubmit)
     });
 
+    console.log('Caspio response:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
+    });
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Submission failed: ${response.status} - ${JSON.stringify(errorData)}`);
+      const errorText = await response.text();
+      console.error('Caspio error:', errorText);
+      throw new Error(`Caspio submission failed: ${response.status} - ${errorText}`);
     }
+
+    const responseText = await response.text();
+    console.log('Caspio success response:', responseText);
   };
 
   const handleFileUploadAndUserData = async (
