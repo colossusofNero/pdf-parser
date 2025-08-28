@@ -7,6 +7,7 @@ import {
   extractPdfData, 
   submitToCaspio,
   uploadFileToCaspio,
+  generateFileName,
   type PartialExtractedData 
 } from './services/api';
 import { Card, CardContent } from './components/ui/card';
@@ -23,22 +24,6 @@ const App: React.FC = () => {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  // Helper function to sanitize filename
-  const sanitizeFileName = (text: string): string => {
-    return text
-      .replace(/[<>:"/\\|?*]/g, '') // Remove illegal filename characters
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
-  };
-
-  // Helper function to generate proper filename from PDF data
-  const generateFileName = (extractedData: PartialExtractedData): string => {
-    const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
-    const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
-    
-    return `RCGV_${prospectName}_${address}.pdf`;
-  };
 
   const handleFileUploadAndUserData = async (
     file: File,
