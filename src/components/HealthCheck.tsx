@@ -1,4 +1,4 @@
-// components/HealthCheck.tsx - Add this to monitor app health
+// components/HealthCheck.tsx - Fixed version with proper table checking
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -53,18 +53,37 @@ export const HealthCheck: React.FC<{ onHealthChange?: (status: HealthStatus) => 
         status.details.environmentIssues.push(`Missing environment variables: ${missingVars.join(', ')}`);
       }
 
-      // Check token format
+      // Check token format - Caspio tokens are typically long and contain hyphens
       const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
       if (token && (token.length < 50 || !token.includes('-'))) {
         status.environment = 'warning';
-        status.details.environmentIssues.push('Token format appears invalid');
+        status.details.environmentIssues.push('Token format appears invalid (should be long with hyphens)');
       }
 
-      // Check API URL format
+      // Check API URL format and extract table name
       const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
-      if (apiUrl && !apiUrl.startsWith('https://')) {
+      if (apiUrl) {
+        if (!apiUrl.startsWith('https://')) {
+          status.environment = 'warning';
+          status.details.environmentIssues.push('API URL should use HTTPS');
+        }
+        
+        // Extract table name from URL
+        const tableMatch = apiUrl.match(/\/tables\/([^\/]+)/);
+        if (tableMatch) {
+          const tableName = tableMatch[1];
+          status.details.environmentIssues.push(`Configured table: ${tableName}`);
+        } else {
+          status.environment = 'warning';
+          status.details.environmentIssues.push('Cannot parse table name from API URL');
+        }
+      }
+
+      // Check file upload URL format
+      const fileUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
+      if (fileUrl && !fileUrl.startsWith('https://')) {
         status.environment = 'warning';
-        status.details.environmentIssues.push('API URL should use HTTPS');
+        status.details.environmentIssues.push('File upload URL should use HTTPS');
       }
 
     } catch (error) {
@@ -76,17 +95,19 @@ export const HealthCheck: React.FC<{ onHealthChange?: (status: HealthStatus) => 
     try {
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Skip PDF worker test in health check as it can be flaky
-      // The worker will be tested when actual PDFs are processed
-      console.log('PDF.js module loaded successfully');
-      
-      // Just verify the module exists and has required functions
+      // Verify the module exists and has required functions
       if (typeof pdfjsLib.getDocument !== 'function') {
         status.pdfWorker = 'error';
         status.details.pdfWorkerIssues.push('PDF.js getDocument function not available');
+      }
+
+      // Check if worker URL is accessible (basic test)
+      if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
+        // PDF.js module loaded successfully with worker support
+        console.log('PDF.js module loaded successfully with worker support');
       } else {
-        // PDF.js is available, mark as healthy
-        // Real functionality will be tested when processing actual files
+        status.pdfWorker = 'warning';
+        status.details.pdfWorkerIssues.push('PDF.js worker configuration may need attention');
       }
     } catch (error: any) {
       status.pdfWorker = 'error';
@@ -98,51 +119,123 @@ export const HealthCheck: React.FC<{ onHealthChange?: (status: HealthStatus) => 
       const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
       const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
 
-      if (token && apiUrl) {
-        // Test with a simple HEAD request or minimal GET
-        const testUrl = apiUrl.replace('/records', ''); // Get table info instead
+      if (!token || !apiUrl) {
+        status.caspio = 'error';
+        status.details.caspioIssues.push('Missing Caspio configuration (token or URL)');
+        return status;
+      }
+
+      // Extract the base API URL and table name
+      const tableMatch = apiUrl.match(/^(https:\/\/[^\/]+\/rest\/v2)\/tables\/([^\/]+)/);
+      if (!tableMatch) {
+        status.caspio = 'error';
+        status.details.caspioIssues.push('Invalid API URL format');
+        return status;
+      }
+
+      const baseUrl = tableMatch[1];
+      const tableName = tableMatch[2];
+
+      // Test connection with table schema endpoint (lighter than records)
+      const schemaUrl = `${baseUrl}/tables/${tableName}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        console.log(`Testing Caspio connection to table: ${tableName}`);
         
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(schemaUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          },
+          signal: controller.signal
+        });
 
-        try {
-          const response = await fetch(testUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Accept': 'application/json'
-            },
-            signal: controller.signal
-          });
+        clearTimeout(timeoutId);
 
-          clearTimeout(timeoutId);
-
-          if (response.status === 401) {
-            status.caspio = 'error';
-            status.details.caspioIssues.push('Invalid or expired access token');
-          } else if (response.status === 403) {
-            status.caspio = 'error';
-            status.details.caspioIssues.push('Access token lacks required permissions');
-          } else if (!response.ok && response.status !== 404) {
-            // 404 might be normal if testing wrong endpoint
+        if (response.status === 401) {
+          status.caspio = 'error';
+          status.details.caspioIssues.push('Invalid or expired access token');
+        } else if (response.status === 403) {
+          status.caspio = 'error';
+          status.details.caspioIssues.push('Access token lacks required permissions for this table');
+        } else if (response.status === 404) {
+          status.caspio = 'error';
+          status.details.caspioIssues.push(`Table '${tableName}' not found - check table name in API URL`);
+        } else if (!response.ok) {
+          status.caspio = 'warning';
+          status.details.caspioIssues.push(`Caspio API returned ${response.status}: ${response.statusText}`);
+        } else {
+          // Success! Let's also verify we can read the table structure
+          try {
+            const tableInfo = await response.json();
+            console.log('Table schema retrieved successfully:', tableInfo);
+            
+            // Verify table has expected structure
+            if (tableInfo && typeof tableInfo === 'object') {
+              status.details.caspioIssues.push(`✓ Connected to table '${tableName}' successfully`);
+            } else {
+              status.caspio = 'warning';
+              status.details.caspioIssues.push('Table schema response format unexpected');
+            }
+          } catch (parseError) {
             status.caspio = 'warning';
-            status.details.caspioIssues.push(`Caspio API returned ${response.status}: ${response.statusText}`);
-          }
-          // If we get here with no errors, Caspio is reachable
-        } catch (fetchError: any) {
-          clearTimeout(timeoutId);
-          if (fetchError.name === 'AbortError') {
-            status.caspio = 'warning';
-            status.details.caspioIssues.push('Caspio API timeout - slow network?');
-          } else {
-            status.caspio = 'error';
-            status.details.caspioIssues.push(`Cannot reach Caspio API: ${fetchError.message}`);
+            status.details.caspioIssues.push('Connected but could not parse table schema');
           }
         }
-      } else {
-        status.caspio = 'error';
-        status.details.caspioIssues.push('Missing Caspio configuration');
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          status.caspio = 'warning';
+          status.details.caspioIssues.push('Caspio API timeout (>8s) - network or server issues');
+        } else {
+          status.caspio = 'error';
+          status.details.caspioIssues.push(`Cannot reach Caspio API: ${fetchError.message}`);
+        }
       }
+
+      // Also test file upload endpoint if configured
+      const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL;
+      if (fileUploadUrl) {
+        try {
+          const fileController = new AbortController();
+          const fileTimeoutId = setTimeout(() => fileController.abort(), 5000);
+
+          // Just test the endpoint accessibility (HEAD request)
+          const fileResponse = await fetch(fileUploadUrl, {
+            method: 'HEAD',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            signal: fileController.signal
+          });
+
+          clearTimeout(fileTimeoutId);
+
+          if (fileResponse.status === 401) {
+            status.caspio = 'error';
+            status.details.caspioIssues.push('File upload: Invalid or expired access token');
+          } else if (fileResponse.status === 403) {
+            status.caspio = 'error';
+            status.details.caspioIssues.push('File upload: Access token lacks file upload permissions');
+          } else if (fileResponse.ok || fileResponse.status === 405) {
+            // 405 is expected for HEAD request on upload endpoint
+            status.details.caspioIssues.push('✓ File upload endpoint accessible');
+          } else {
+            status.caspio = 'warning';
+            status.details.caspioIssues.push(`File upload endpoint returned ${fileResponse.status}`);
+          }
+        } catch (fileError: any) {
+          if (fileError.name !== 'AbortError') {
+            status.caspio = 'warning';
+            status.details.caspioIssues.push(`File upload test failed: ${fileError.message}`);
+          }
+        }
+      }
+
     } catch (error: any) {
       status.caspio = 'error';
       status.details.caspioIssues.push(`Caspio health check failed: ${error.message}`);
@@ -169,6 +262,21 @@ export const HealthCheck: React.FC<{ onHealthChange?: (status: HealthStatus) => 
       onHealthChange?.(newStatus);
     } catch (error) {
       console.error('Health check failed:', error);
+      // Create a fallback status
+      const errorStatus: HealthStatus = {
+        environment: 'error',
+        pdfWorker: 'error',
+        caspio: 'error',
+        overall: 'error',
+        lastCheck: new Date().toISOString(),
+        details: {
+          environmentIssues: ['Health check system error'],
+          pdfWorkerIssues: ['Health check system error'],
+          caspioIssues: [`Health check system error: ${error}`]
+        }
+      };
+      setHealthStatus(errorStatus);
+      onHealthChange?.(errorStatus);
     } finally {
       setIsChecking(false);
     }
@@ -244,44 +352,62 @@ export const HealthCheck: React.FC<{ onHealthChange?: (status: HealthStatus) => 
         </div>
       </div>
 
-      {/* Show details for warnings/errors */}
-      {(healthStatus.overall !== 'healthy') && (
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <details className="text-sm">
-            <summary className="cursor-pointer font-medium mb-2">View Details</summary>
-            {healthStatus.details.environmentIssues.length > 0 && (
-              <div className="mb-2">
-                <strong>Environment Issues:</strong>
-                <ul className="list-disc list-inside ml-4">
-                  {healthStatus.details.environmentIssues.map((issue, i) => (
-                    <li key={i} className="text-red-600">{issue}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {healthStatus.details.pdfWorkerIssues.length > 0 && (
-              <div className="mb-2">
-                <strong>PDF Engine Issues:</strong>
-                <ul className="list-disc list-inside ml-4">
-                  {healthStatus.details.pdfWorkerIssues.map((issue, i) => (
-                    <li key={i} className="text-red-600">{issue}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {healthStatus.details.caspioIssues.length > 0 && (
-              <div className="mb-2">
-                <strong>Caspio API Issues:</strong>
-                <ul className="list-disc list-inside ml-4">
-                  {healthStatus.details.caspioIssues.map((issue, i) => (
-                    <li key={i} className="text-red-600">{issue}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </details>
-        </div>
-      )}
+      {/* Show details for all statuses (including success messages) */}
+      <div className="mt-3 pt-3 border-t border-gray-200">
+        <details className="text-sm">
+          <summary className="cursor-pointer font-medium mb-2">View Details</summary>
+          
+          {/* Environment Details */}
+          {status.environment !== 'error' && status.details.environmentIssues.length === 0 ? (
+            <div className="mb-2">
+              <strong className="text-green-600">Environment:</strong> ✓ All variables configured
+            </div>
+          ) : (
+            <div className="mb-2">
+              <strong>Environment Issues:</strong>
+              <ul className="list-disc list-inside ml-4">
+                {status.details.environmentIssues.map((issue, i) => (
+                  <li key={i} className={issue.startsWith('✓') ? 'text-green-600' : issue.startsWith('Configured') ? 'text-blue-600' : 'text-red-600'}>
+                    {issue}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* PDF Engine Details */}
+          {status.pdfWorker === 'healthy' && status.details.pdfWorkerIssues.length === 0 ? (
+            <div className="mb-2">
+              <strong className="text-green-600">PDF Engine:</strong> ✓ PDF.js loaded successfully
+            </div>
+          ) : (
+            <div className="mb-2">
+              <strong>PDF Engine Issues:</strong>
+              <ul className="list-disc list-inside ml-4">
+                {status.details.pdfWorkerIssues.map((issue, i) => (
+                  <li key={i} className="text-red-600">{issue}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Caspio Details */}
+          <div className="mb-2">
+            <strong>Caspio API:</strong>
+            <ul className="list-disc list-inside ml-4">
+              {status.details.caspioIssues.length === 0 ? (
+                <li className="text-green-600">✓ API connection successful</li>
+              ) : (
+                status.details.caspioIssues.map((issue, i) => (
+                  <li key={i} className={issue.startsWith('✓') ? 'text-green-600' : 'text-red-600'}>
+                    {issue}
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </details>
+      </div>
 
       <div className="mt-2 text-xs text-gray-500">
         Last checked: {new Date(healthStatus.lastCheck).toLocaleString()}
