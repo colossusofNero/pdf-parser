@@ -1,4 +1,4 @@
-// services/api.ts - Corrected version with proper serverless integration
+// services/api.ts - Updated with generateFileName function
 import { parsePDF } from './pdfParser';
 
 export interface ExtractedData {
@@ -42,7 +42,7 @@ const sanitizeFileName = (text: string): string => {
     .trim();
 };
 
-// Helper function to generate proper filename from extracted data
+// EXPORTED: Helper function to generate proper filename from PDF data
 export const generateFileName = (extractedData: PartialExtractedData): string => {
   const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
   const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
@@ -83,7 +83,7 @@ const formatDate = (dateString?: string): string => {
   }
 };
 
-// Extract data from PDF using client-side parsing
+// Extract data from PDF
 export const extractPdfData = async (file: File): Promise<PartialExtractedData> => {
   if (!file) {
     throw new Error('No file provided');
@@ -105,7 +105,7 @@ export const extractPdfData = async (file: File): Promise<PartialExtractedData> 
 // File upload function using serverless endpoint with proper filename
 export const uploadFileToCaspio = async (
   file: File, 
-  customFileName: string
+  customFileName?: string
 ): Promise<string> => {
   if (!file) {
     throw new Error('No file provided');
@@ -114,9 +114,13 @@ export const uploadFileToCaspio = async (
   try {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('fileName', customFileName); // Pass the custom filename
     
-    console.log('Uploading file to serverless endpoint with name:', customFileName);
+    // Add custom filename if provided
+    if (customFileName) {
+      formData.append('fileName', customFileName);
+    }
+
+    console.log('Uploading file to serverless endpoint with name:', customFileName || file.name);
     
     const response = await fetch('/api/upload-file', {
       method: 'POST',
@@ -131,41 +135,24 @@ export const uploadFileToCaspio = async (
     const responseData = await response.json();
     console.log('File upload response:', responseData);
     
-    return responseData.data.fileUrl || responseData.data.fileName || customFileName;
+    return responseData.data.fileUrl || responseData.data.fileName || customFileName || file.name;
   } catch (error) {
     console.error('Error uploading file:', error);
     throw new Error(error instanceof Error ? error.message : 'Unknown upload error');
   }
 };
 
-// Submit data to Caspio with comprehensive diagnostic logging
+// Submit data to Caspio using serverless endpoint
 export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
-  const config = {
-    token: import.meta.env.VITE_CASPIO_ACCESS_TOKEN,
-    apiUrl: import.meta.env.VITE_CASPIO_API_URL,
-    fileUploadUrl: import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL
-  };
-
-  console.log('🔍 CASPIO DIAGNOSTIC START');
-  console.log('📋 Environment Configuration:', {
-    hasToken: !!config.token,
-    tokenLength: config.token?.length || 0,
-    tokenStart: config.token?.substring(0, 15) || 'MISSING',
-    tokenEnd: config.token?.substring(-10) || 'MISSING',
-    apiUrl: config.apiUrl || 'MISSING',
+  console.log('🔍 CASPIO SUBMISSION START');
+  console.log('📋 Environment Configuration Check:', {
+    hasToken: !!import.meta.env.VITE_CASPIO_ACCESS_TOKEN,
+    hasApiUrl: !!import.meta.env.VITE_CASPIO_API_URL,
     timestamp: new Date().toISOString()
   });
 
-  if (!config.token) {
-    throw new Error('❌ Caspio access token is not configured');
-  }
-
-  if (!config.apiUrl) {
-    throw new Error('❌ Caspio API URL is not configured');
-  }
-
   try {
-    // Format dates properly
+    // Format dates
     const formattedData = {
       ...data,
       Date_of_Purchase: data.Date_of_Purchase ? formatDate(data.Date_of_Purchase) : undefined,
@@ -212,16 +199,8 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
-      redirected: response.redirected,
-      type: response.type,
-      url: response.url,
       requestDuration: `${endTime - startTime}ms`,
       timestamp: new Date().toISOString()
-    });
-
-    console.log('📋 RESPONSE HEADERS:');
-    response.headers.forEach((value, name) => {
-      console.log(`  ${name}: ${value}`);
     });
 
     // Get response body with detailed analysis
@@ -231,9 +210,7 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
       contentLength: responseText.length,
       isEmpty: responseText.trim() === '',
       firstChars: responseText.substring(0, 100),
-      containsJSON: responseText.trim().startsWith('{') || responseText.trim().startsWith('['),
-      containsHTML: responseText.includes('<html>') || responseText.includes('<body>'),
-      containsError: responseText.toLowerCase().includes('error')
+      containsJSON: responseText.trim().startsWith('{') || responseText.trim().startsWith('[')
     });
 
     console.log('📋 FULL RESPONSE BODY:');
