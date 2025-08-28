@@ -1,11 +1,10 @@
-// App.tsx - Simple version to isolate the function error
+// App.tsx - Complete fix for all identified issues
 import React, { useState } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { FileUpload } from './components/FileUpload';
-import { PdfDataDisplay } from './components/PdfDataDisplay';
 import { Card, CardContent } from './components/ui/card';
 
-// Define types locally to avoid import issues
+// Local interface definitions to avoid import conflicts
 interface ExtractedData {
   Name_of_Prospect?: string;
   Address_of_Property?: string;
@@ -50,113 +49,123 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Simple filename generation - no external function calls
-  const createFileName = (data: ExtractedData): string => {
-    const name = (data.Name_of_Prospect || 'Unknown').replace(/[<>:"/\\|?*]/g, '').trim();
-    const address = (data.Address_of_Property || 'Unknown Address').replace(/[<>:"/\\|?*]/g, '').trim();
+  // Filename generation (local to avoid import issues)
+  const sanitizeFileName = (text: string): string => {
+    return text
+      .replace(/[<>:"/\\|?*]/g, '') // Remove illegal characters
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  };
+
+  const generateFileName = (data: ExtractedData): string => {
+    const name = sanitizeFileName(data.Name_of_Prospect || 'Unknown');
+    const address = sanitizeFileName(data.Address_of_Property || 'Unknown Address');
     return `RCGV_${name}_${address}.pdf`;
   };
 
-  // Extract data from PDF using client-side parsing with CDN worker
+  // Client-side PDF extraction with robust error handling
   const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
     try {
-      // Initialize PDF.js
+      console.log('Starting PDF extraction for:', file.name);
+      
+      // Dynamic import of PDF.js with error handling
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Use CDN worker instead of local file
+      // Use CDN worker to avoid deployment issues
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+      
+      console.log('PDF.js loaded, processing file...');
 
-      console.log('PDF.js initialized with CDN worker');
-
-      // Read file
       const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const loadingTask = pdfjsLib.getDocument({ 
+        data: arrayBuffer,
+        verbosity: 0 // Reduce console noise
+      });
+      
       const pdf = await loadingTask.promise;
-
-      if (pdf.numPages === 0) {
-        throw new Error('The PDF file appears to be empty.');
-      }
+      console.log(`PDF loaded successfully, ${pdf.numPages} pages`);
 
       // Extract text from first page
       const page = await pdf.getPage(1);
       const textContent = await page.getTextContent();
 
-      // Look for metadata in the text
       const fullText = textContent.items
         .map((item: any) => item.str || '')
         .join(' ');
 
-      console.log('PDF text extracted, length:', fullText.length);
-      console.log('First 500 chars:', fullText.substring(0, 500));
+      console.log('Extracted text length:', fullText.length);
 
-      // Parse the metadata row format: ||key:value||key:value||
-      const metadataRegex = /\|\|([^|]+?:[^|]+?)\|\|/g;
-      const matches = Array.from(fullText.matchAll(metadataRegex));
-      
-      console.log('Found metadata matches:', matches.length);
-
+      // Enhanced metadata parsing
       const extractedData: ExtractedData = {};
-
-      matches.forEach((match) => {
-        const field = match[1];
-        const parts = field.split(':');
-        if (parts.length === 2) {
-          const [key, value] = parts.map(s => s.trim());
-          if (key && value) {
-            console.log(`Parsing field: ${key} = ${value}`);
-            
-            // Convert to appropriate type
-            if (['Purchase_Price', 'Capital_Improvements_Amount', 'Building_Value', 'Know_Land_Value', 
-                 'SqFt_Building', 'Acres_Land', 'Year_Built', 'Bid_Amount_Original', 'Pay_Upfront', 
-                 'Pay_50_50_Amount', 'Pay_Over_Time', 'Rush_Fee', 'Multiple_Properties_Quote', 
-                 'First_Year_Bonus_Quote', 'Tax_Year'].includes(key)) {
-              const numValue = parseFloat(value.replace(/[,$]/g, ''));
-              if (!isNaN(numValue)) {
-                (extractedData as any)[key] = numValue;
-              }
-            } else {
-              (extractedData as any)[key] = value;
+      
+      // Look for the metadata pattern: ||key:value||
+      const metadataRegex = /\|\|([^|:]+):([^|]*)\|\|/g;
+      let match;
+      
+      console.log('Parsing metadata...');
+      while ((match = metadataRegex.exec(fullText)) !== null) {
+        const [, key, value] = match;
+        const cleanKey = key.trim();
+        const cleanValue = value.trim();
+        
+        console.log(`Found: ${cleanKey} = ${cleanValue}`);
+        
+        if (cleanKey && cleanValue) {
+          // Handle numeric fields
+          if (['Purchase_Price', 'Capital_Improvements_Amount', 'Building_Value', 'Know_Land_Value', 
+               'SqFt_Building', 'Acres_Land', 'Year_Built', 'Bid_Amount_Original', 'Pay_Upfront', 
+               'Pay_50_50_Amount', 'Pay_Over_Time', 'Rush_Fee', 'Multiple_Properties_Quote', 
+               'First_Year_Bonus_Quote', 'Tax_Year'].includes(cleanKey)) {
+            const numValue = parseFloat(cleanValue.replace(/[,$]/g, ''));
+            if (!isNaN(numValue)) {
+              (extractedData as any)[cleanKey] = numValue;
             }
+          } else {
+            // String fields
+            (extractedData as any)[cleanKey] = cleanValue;
           }
         }
-      });
+      }
 
       console.log('Final extracted data:', extractedData);
       
-      // Ensure we have required fields
+      // Validate required fields
       if (!extractedData.Name_of_Prospect || !extractedData.Address_of_Property) {
-        throw new Error('Could not extract required fields (Name_of_Prospect, Address_of_Property) from PDF');
+        throw new Error('Required fields missing from PDF: Name_of_Prospect or Address_of_Property');
       }
 
       return { ...extractedData, file };
 
     } catch (error) {
-      console.error('Client-side PDF extraction error:', error);
+      console.error('PDF extraction failed:', error);
       throw new Error(`Failed to extract PDF data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  // Simple file upload - just log for now since serverless isn't working
-  const uploadFile = async (file: File): Promise<void> => {
-    console.log('File upload requested for:', file.name);
-    // Skip actual upload since serverless endpoints aren't working
-    // Just log that it would happen
-  };
-
-  // Simple submission - direct to Caspio without serverless
-  const submitData = async (data: ExtractedData): Promise<void> => {
-    const { file, ...dataToSubmit } = data;
+  // Direct Caspio submission (bypass serverless issues)
+  const submitToCaspio = async (data: ExtractedData): Promise<void> => {
+    console.log('Starting Caspio submission...');
     
-    console.log('Direct submission to Caspio (bypassing serverless)');
-    console.log('Data to submit:', dataToSubmit);
-
-    // Get config from environment
+    // Get environment variables
     const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
     const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
-
+    
     if (!token || !apiUrl) {
-      throw new Error('Missing Caspio configuration in environment variables');
+      throw new Error('Missing Caspio configuration. Check VITE_CASPIO_ACCESS_TOKEN and VITE_CASPIO_API_URL');
     }
+
+    // Prepare data (remove file property)
+    const { file, ...submitData } = data;
+    
+    // Remove any undefined values
+    Object.keys(submitData).forEach(key => {
+      if (submitData[key as keyof typeof submitData] === undefined) {
+        delete submitData[key as keyof typeof submitData];
+      }
+    });
+
+    console.log('Submitting to Caspio:', submitData);
+    console.log('API URL:', apiUrl);
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -165,23 +174,19 @@ const App: React.FC = () => {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      body: JSON.stringify(dataToSubmit)
+      body: JSON.stringify(submitData)
     });
 
-    console.log('Caspio response:', {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok
-    });
+    console.log('Caspio response status:', response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Caspio error:', errorText);
+      console.error('Caspio error response:', errorText);
       throw new Error(`Caspio submission failed: ${response.status} - ${errorText}`);
     }
 
     const responseText = await response.text();
-    console.log('Caspio success response:', responseText);
+    console.log('Caspio success response:', responseText || '(empty response)');
   };
 
   const handleFileUploadAndUserData = async (
@@ -190,6 +195,7 @@ const App: React.FC = () => {
   ) => {
     setIsLoading(true);
     try {
+      console.log('Processing file and user data...');
       const extractedPdfData = await extractDataFromPDF(file);
       setExtractedData(extractedPdfData);
       setUserData(userInputData);
@@ -197,7 +203,7 @@ const App: React.FC = () => {
       toast.success('PDF data extracted successfully');
     } catch (error) {
       console.error('Error processing data:', error);
-      toast.error('Failed to extract PDF data');
+      toast.error(`Failed to extract PDF data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -211,26 +217,25 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
-      // Generate filename using extracted data
-      const fileName = createFileName(extractedData);
+      // Generate filename from extracted PDF data
+      const fileName = generateFileName(extractedData);
       console.log('Generated filename:', fileName);
 
-      // Upload file
-      await uploadFile(selectedFile);
-
-      // Prepare submission data
+      // Prepare final submission data
       const submissionData: ExtractedData = {
         ...extractedData,
+        // User contact info
         Contact_Name_First: userData.firstName.trim(),
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
+        // File reference
         Quote_pdf: `/${fileName}`
       };
 
-      console.log('Submitting data:', submissionData);
-
-      await submitData(submissionData);
+      console.log('Final submission data:', submissionData);
+      
+      await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');
       
       // Reset form
@@ -238,8 +243,8 @@ const App: React.FC = () => {
       setUserData(null);
       setSelectedFile(null);
     } catch (error) {
-      console.error('Error submitting to Caspio:', error);
-      toast.error(`Failed to submit data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Submission error:', error);
+      toast.error(`Failed to submit: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -247,11 +252,54 @@ const App: React.FC = () => {
 
   const handleEditData = (field: string, value: any) => {
     if (!extractedData) return;
-    
-    setExtractedData({
-      ...extractedData,
-      [field]: value
-    });
+    setExtractedData({ ...extractedData, [field]: value });
+  };
+
+  // Simple data display component (inline to avoid interface issues)
+  const DataDisplay: React.FC<{ data: ExtractedData }> = ({ data }) => {
+    const formatValue = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      if (typeof value === 'number') {
+        return value.toLocaleString();
+      }
+      return value.toString();
+    };
+
+    const fields = [
+      { key: 'Name_of_Prospect', label: 'Prospect Name' },
+      { key: 'Address_of_Property', label: 'Property Address' },
+      { key: 'Zip_Code', label: 'Zip Code' },
+      { key: 'Purchase_Price', label: 'Purchase Price' },
+      { key: 'Building_Value', label: 'Building Value' },
+      { key: 'Know_Land_Value', label: 'Land Value' },
+      { key: 'Date_of_Purchase', label: 'Purchase Date' },
+      { key: 'SqFt_Building', label: 'Building Sq Ft' },
+      { key: 'Acres_Land', label: 'Land Acres' },
+      { key: 'Type_of_Property_Quote', label: 'Property Type' },
+      { key: 'Bid_Amount_Original', label: 'Original Bid' },
+      { key: 'Pay_Upfront', label: 'Upfront Payment' },
+      { key: 'Tax_Year', label: 'Tax Year' }
+    ];
+
+    return (
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Extracted Data</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {fields.map(({ key, label }) => (
+            <div key={key} className="space-y-1">
+              <label className="text-sm font-medium text-gray-600">{label}:</label>
+              <input
+                type="text"
+                value={formatValue(data[key as keyof ExtractedData])}
+                onChange={(e) => handleEditData(key, e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                disabled={isLoading}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -282,22 +330,24 @@ const App: React.FC = () => {
                 <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <h3 className="font-medium text-blue-800 mb-2">File Information</h3>
                   <p className="text-sm text-blue-700">
-                    <strong>Original file:</strong> {selectedFile?.name || 'Unknown'}
+                    <strong>Original:</strong> {selectedFile?.name}
                   </p>
                   <p className="text-sm text-blue-700">
-                    <strong>Generated Caspio filename:</strong> {createFileName(extractedData)}
-                  </p>
-                  <p className="text-sm text-blue-600 mt-1">
-                    This filename is generated from the prospect name and property address in the PDF
+                    <strong>Caspio filename:</strong> {generateFileName(extractedData)}
                   </p>
                 </div>
                 
-                <PdfDataDisplay 
-                  data={extractedData}
-                  onEdit={handleEditData}
-                  onSubmit={handleSubmitToCaspio}
-                  isProcessing={isLoading}
-                />
+                <DataDisplay data={extractedData} />
+                
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={handleSubmitToCaspio}
+                    disabled={isLoading}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isLoading ? 'Submitting...' : 'Submit to Caspio'}
+                  </button>
+                </div>
               </CardContent>
             </Card>
           )}
