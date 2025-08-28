@@ -57,14 +57,16 @@ const App: React.FC = () => {
     return `RCGV_${name}_${address}.pdf`;
   };
 
-  // Extract data from PDF using client-side parsing
+  // Extract data from PDF using client-side parsing with CDN worker
   const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
     try {
       // Initialize PDF.js
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Set worker source
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+      // Use CDN worker instead of local file
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+
+      console.log('PDF.js initialized with CDN worker');
 
       // Read file
       const arrayBuffer = await file.arrayBuffer();
@@ -84,39 +86,48 @@ const App: React.FC = () => {
         .map((item: any) => item.str || '')
         .join(' ');
 
-      console.log('PDF text extracted:', fullText);
+      console.log('PDF text extracted, length:', fullText.length);
+      console.log('First 500 chars:', fullText.substring(0, 500));
 
       // Parse the metadata row format: ||key:value||key:value||
-      const metadataMatch = fullText.match(/\|\|([^|]+)\|\|/g);
+      const metadataRegex = /\|\|([^|]+?:[^|]+?)\|\|/g;
+      const matches = Array.from(fullText.matchAll(metadataRegex));
+      
+      console.log('Found metadata matches:', matches.length);
+
       const extractedData: ExtractedData = {};
 
-      if (metadataMatch) {
-        const metadataText = metadataMatch.join('');
-        const fields = metadataText.split('||').filter(Boolean);
-
-        fields.forEach((field) => {
-          const parts = field.split(':');
-          if (parts.length === 2) {
-            const [key, value] = parts.map(s => s.trim());
-            if (key && value) {
-              // Convert to appropriate type
-              if (['Purchase_Price', 'Capital_Improvements_Amount', 'Building_Value', 'Know_Land_Value', 
-                   'SqFt_Building', 'Acres_Land', 'Year_Built', 'Bid_Amount_Original', 'Pay_Upfront', 
-                   'Pay_50_50_Amount', 'Pay_Over_Time', 'Rush_Fee', 'Multiple_Properties_Quote', 
-                   'First_Year_Bonus_Quote', 'Tax_Year'].includes(key)) {
-                const numValue = parseFloat(value.replace(/[,$]/g, ''));
-                if (!isNaN(numValue)) {
-                  (extractedData as any)[key] = numValue;
-                }
-              } else {
-                (extractedData as any)[key] = value;
+      matches.forEach((match) => {
+        const field = match[1];
+        const parts = field.split(':');
+        if (parts.length === 2) {
+          const [key, value] = parts.map(s => s.trim());
+          if (key && value) {
+            console.log(`Parsing field: ${key} = ${value}`);
+            
+            // Convert to appropriate type
+            if (['Purchase_Price', 'Capital_Improvements_Amount', 'Building_Value', 'Know_Land_Value', 
+                 'SqFt_Building', 'Acres_Land', 'Year_Built', 'Bid_Amount_Original', 'Pay_Upfront', 
+                 'Pay_50_50_Amount', 'Pay_Over_Time', 'Rush_Fee', 'Multiple_Properties_Quote', 
+                 'First_Year_Bonus_Quote', 'Tax_Year'].includes(key)) {
+              const numValue = parseFloat(value.replace(/[,$]/g, ''));
+              if (!isNaN(numValue)) {
+                (extractedData as any)[key] = numValue;
               }
+            } else {
+              (extractedData as any)[key] = value;
             }
           }
-        });
+        }
+      });
+
+      console.log('Final extracted data:', extractedData);
+      
+      // Ensure we have required fields
+      if (!extractedData.Name_of_Prospect || !extractedData.Address_of_Property) {
+        throw new Error('Could not extract required fields (Name_of_Prospect, Address_of_Property) from PDF');
       }
 
-      console.log('Extracted data:', extractedData);
       return { ...extractedData, file };
 
     } catch (error) {
