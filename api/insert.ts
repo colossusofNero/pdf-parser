@@ -4,35 +4,12 @@ import { google } from 'googleapis';
 
 export const config = { runtime: 'nodejs' };
 
-// Column order in the sheet
 const HEADERS = [
-  'Name_of_Prospect',
-  'Address_of_Property',
-  'Zip_Code',
-  'Purchase_Price',
-  'Capital_Improvements_Amount',
-  'Building_Value',
-  'Know_Land_Value',
-  'Date_of_Purchase',
-  'SqFt_Building',
-  'Acres_Land',
-  'Year_Built',
-  'Bid_Amount_Original',
-  'Pay_Upfront',
-  'Pay_50_50_Amount',
-  'Pay_Over_Time',
-  'Rush_Fee',
-  'Multiple_Properties_Quote',
-  'First_Year_Bonus_Quote',
-  'Tax_Year',
-  'Tax_Deadline_Quote',
-  'CapEx_Date',
-  'Type_of_Property_Quote',
-  'Contact_Name_First',
-  'Contact_Name_Last',
-  'Contact_Phone',
-  'Email_from_App',
-  'Quote_pdf'
+  'Name_of_Prospect','Address_of_Property','Zip_Code','Purchase_Price','Capital_Improvements_Amount',
+  'Building_Value','Know_Land_Value','Date_of_Purchase','SqFt_Building','Acres_Land','Year_Built',
+  'Bid_Amount_Original','Pay_Upfront','Pay_50_50_Amount','Pay_Over_Time','Rush_Fee','Multiple_Properties_Quote',
+  'First_Year_Bonus_Quote','Tax_Year','Tax_Deadline_Quote','CapEx_Date','Type_of_Property_Quote',
+  'Contact_Name_First','Contact_Name_Last','Contact_Phone','Email_from_App','Quote_pdf'
 ] as const;
 
 type RecordIn = Partial<Record<(typeof HEADERS)[number], string | number>>;
@@ -46,56 +23,53 @@ async function readJsonBody(req: VercelRequest): Promise<any> {
 }
 
 function getSheetsClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
-  // Always convert "\n" to real newlines and strip accidental surrounding quotes
+  const email = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
   const keyRaw = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').trim().replace(/^"|"$/g, '');
-  const privateKey = keyRaw.replace(/\\n/g, '\n');
-
-  if (!email || !privateKey) {
-    throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
-  }
+  const privateKey = keyRaw.replace(/\\n/g, '\n'); // normalize \n to real newlines
+  if (!email || !privateKey) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
   if (!privateKey.includes('BEGIN PRIVATE KEY') || !privateKey.includes('END PRIVATE KEY')) {
-    throw new Error('Service account private key is not a valid PEM. Ensure \\n were preserved and converted.');
+    throw new Error('Service account private key is not a valid PEM');
   }
-
-  const auth = new google.auth.JWT(
-    email,
-    undefined,
-    privateKey,
-    ['https://www.googleapis.com/auth/spreadsheets']
-  );
+  const auth = new google.auth.JWT(email, undefined, privateKey, ['https://www.googleapis.com/auth/spreadsheets']);
   return google.sheets({ version: 'v4', auth });
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Health
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '';
+  const sheetName = process.env.GOOGLE_SHEETS_SHEET_NAME || 'Sheet1';
+
   if (req.method === 'GET') {
-    const keyProbe = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
-    return res.status(200).json({
+    const probe: any = {
       ok: true,
       hasEnv: {
         GOOGLE_SERVICE_ACCOUNT_EMAIL: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
         GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: !!process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
-        GOOGLE_SHEETS_SPREADSHEET_ID: !!process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
-        GOOGLE_SHEETS_SHEET_NAME: !!process.env.GOOGLE_SHEETS_SHEET_NAME
+        GOOGLE_SHEETS_SPREADSHEET_ID: !!spreadsheetId,
+        GOOGLE_SHEETS_SHEET_NAME: !!sheetName
       },
-      keyNewlineStyle: keyProbe.includes('\n') ? 'real-newlines' : (keyProbe.includes('\\n') ? 'backslash-n' : 'unknown')
-    });
-  }
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed', hint: 'Use POST or GET' });
+      keyNewlineStyle: (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').includes('\n')
+        ? 'real-newlines'
+        : ((process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').includes('\\n') ? 'backslash-n' : 'unknown')
+    };
+    try {
+      const sheets = getSheetsClient();
+      const headerResp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetName}!1:1` });
+      probe.sheetStatus = 'ok';
+      probe.header = headerResp.data.values?.[0] || [];
+    } catch (e: any) {
+      probe.sheetStatus = 'error';
+      probe.sheetError = String(e?.message || e);
+    }
+    return res.status(200).json(probe);
   }
 
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  const sheetName = process.env.GOOGLE_SHEETS_SHEET_NAME || 'Sheet1';
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed', hint: 'Use POST or GET' });
+
   if (!spreadsheetId) return res.status(500).json({ error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
 
   let body: any;
-  try {
-    body = await readJsonBody(req);
-  } catch (e: any) {
-    return res.status(400).json({ error: 'Unable to read JSON body', message: String(e?.message || e) });
-  }
+  try { body = await readJsonBody(req); } 
+  catch (e: any) { return res.status(400).json({ error: 'Unable to read JSON body', message: String(e?.message || e) }); }
 
   const record: RecordIn | undefined = body?.record;
   if (!record || typeof record !== 'object') {
@@ -105,14 +79,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const sheets = getSheetsClient();
 
-    // Ensure header row
+    // Ensure header row or validate it
     const headerResp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetName}!1:1` });
     const headerRow: string[] = headerResp.data.values?.[0] || [];
     if (headerRow.length === 0) {
       await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `${sheetName}!A1`,
-        valueInputOption: 'RAW',
+        spreadsheetId, range: `${sheetName}!A1`, valueInputOption: 'RAW',
         requestBody: { values: [HEADERS as unknown as string[]] }
       });
     } else {
@@ -144,6 +116,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       updatedRows: append.data.updates?.updatedRows
     });
   } catch (e: any) {
+    // Surface exact error to the client
     return res.status(500).json({ error: 'Unhandled server error', message: String(e?.message || e) });
   }
 }
