@@ -1,102 +1,149 @@
+// api/insert.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { google } from 'googleapis';
+
+export const config = { runtime: 'nodejs20.x' };
+
+const HEADERS = [
+  'Name_of_Prospect',
+  'Address_of_Property',
+  'Zip_Code',
+  'Purchase_Price',
+  'Capital_Improvements_Amount',
+  'Building_Value',
+  'Know_Land_Value',
+  'Date_of_Purchase',
+  'SqFt_Building',
+  'Acres_Land',
+  'Year_Built',
+  'Bid_Amount_Original',
+  'Pay_Upfront',
+  'Pay_50_50_Amount',
+  'Pay_Over_Time',
+  'Rush_Fee',
+  'Multiple_Properties_Quote',
+  'First_Year_Bonus_Quote',
+  'Tax_Year',
+  'Tax_Deadline_Quote',
+  'CapEx_Date',
+  'Type_of_Property_Quote',
+  'Contact_Name_First',
+  'Contact_Name_Last',
+  'Contact_Phone',
+  'Email_from_App',
+  'Quote_pdf'
+] as const;
+
+type RecordIn = Partial<Record<(typeof HEADERS)[number], string | number>>;
+
+async function readJsonBody(req: VercelRequest): Promise<any> {
+  if (req.body && typeof req.body === 'object') return req.body;
+  const chunks: Uint8Array[] = [];
+  for await (const c of req) chunks.push(typeof c === 'string' ? Buffer.from(c) : c);
+  const raw = Buffer.concat(chunks).toString('utf8');
+  try { return JSON.parse(raw); } catch { return { _raw: raw }; }
+}
+
+function getSheetsClient() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const keyRaw = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
+  const privateKey = keyRaw.includes('BEGIN PRIVATE KEY') ? keyRaw : keyRaw.replace(/\\n/g, '\n');
+  if (!email || !privateKey) {
+    throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
+  }
+  const auth = new google.auth.JWT(email, undefined, privateKey, ['https://www.googleapis.com/auth/spreadsheets']);
+  return google.sheets({ version: 'v4', auth });
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS + health
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method === 'GET') return res.status(200).json({ ok: true });
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed', hint: 'Use POST' });
-  }
-
-  const account = process.env.CASPIO_ACCOUNT;
-  const clientId = process.env.CASPIO_CLIENT_ID;
-  const clientSecret = process.env.CASPIO_CLIENT_SECRET;
-  const tableName = 'A_Quote_Webapp_tbl';
-
-  // Validate server env
-  if (!account || !clientId || !clientSecret) {
-    return res.status(500).json({
-      error: 'Server misconfigured',
-      missing: {
-        CASPIO_ACCOUNT: !!account,
-        CASPIO_CLIENT_ID: !!clientId,
-        CASPIO_CLIENT_SECRET: !!clientSecret
-      },
-      hint: 'Set these in Vercel Project Settings → Environment Variables (server-side, no VITE_)'
+  // Health check
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      ok: true,
+      hasEnv: {
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: !!process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+        GOOGLE_SHEETS_SPREADSHEET_ID: !!process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+        GOOGLE_SHEETS_SHEET_NAME: !!process.env.GOOGLE_SHEETS_SHEET_NAME
+      }
     });
   }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed', hint: 'Use POST or GET' });
+  }
 
-  // Validate body
-  const record = (req.body as any)?.record;
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const sheetName = process.env.GOOGLE_SHEETS_SHEET_NAME || 'Sheet1';
+  if (!spreadsheetId) {
+    return res.status(500).json({ error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
+  }
+
+  let body: any;
+  try {
+    body = await readJsonBody(req);
+  } catch (e: any) {
+    return res.status(400).json({ error: 'Unable to read JSON body', message: String(e?.message || e) });
+  }
+
+  const record: RecordIn | undefined = body?.record;
   if (!record || typeof record !== 'object') {
     return res.status(400).json({
       error: 'Bad Request',
-      hint: 'POST JSON with { "record": { ...fields } }',
-      example: { record: { Name_of_Prospect: 'Jane Doe', Purchase_Price: 123456 } }
+      hint: 'POST JSON with { "record": { ...fields } }'
     });
   }
 
   try {
-    // 1) OAuth token
-    const tokenRes = await fetch(`https://${account}.caspio.com/oauth/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret
-      })
+    const sheets = getSheetsClient();
+
+    // Ensure header row
+    const headerResp = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!1:1`
+    });
+    const headerRow: string[] = headerResp.data.values?.[0] || [];
+
+    if (headerRow.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetName}!A1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [HEADERS as unknown as string[]] }
+      });
+    } else {
+      const missing = HEADERS.filter(h => !headerRow.includes(h));
+      const extra = headerRow.filter(h => !HEADERS.includes(h as any));
+      if (missing.length || extra.length) {
+        return res.status(422).json({
+          error: 'Header mismatch',
+          missing,
+          extra,
+          expected: HEADERS,
+          got: headerRow
+        });
+      }
+    }
+
+    // Build row in the exact header order
+    const row = (HEADERS as unknown as string[]).map(k => {
+      const v = (record as any)[k];
+      return v === undefined || v === null ? '' : v;
     });
 
-    const tokenText = await tokenRes.text();
-    if (!tokenRes.ok) {
-      return res.status(502).json({
-        error: 'Caspio auth failed',
-        status: tokenRes.status,
-        body: tokenText
-      });
-    }
-    let access_token: string | undefined;
-    try {
-      const parsed = JSON.parse(tokenText);
-      access_token = parsed.access_token;
-    } catch {
-      return res.status(502).json({ error: 'Auth JSON parse failed', body: tokenText });
-    }
-    if (!access_token) {
-      return res.status(502).json({ error: 'No access_token in auth response', body: tokenText });
-    }
-
-    // 2) Insert record
-    const url = `https://${account}.caspio.com/rest/v2/tables/${encodeURIComponent(tableName)}/records`;
-    const caspioRes = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
-      body: JSON.stringify(record)
+    // Append row
+    const append = await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${sheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [row] }
     });
 
-    const caspioText = await caspioRes.text();
-    if (!caspioRes.ok) {
-      // Bubble up Caspio’s error so you can see exactly why it failed
-      return res.status(caspioRes.status).json({
-        error: 'Caspio insert failed',
-        status: caspioRes.status,
-        body: caspioText
-      });
-    }
-
-    // Success passthrough
-    // Caspio typically returns inserted record metadata
-    try {
-      return res.status(caspioRes.status).json(JSON.parse(caspioText));
-    } catch {
-      return res.status(caspioRes.status).send(caspioText);
-    }
+    return res.status(200).json({
+      ok: true,
+      updatedRange: append.data.updates?.updatedRange,
+      updatedRows: append.data.updates?.updatedRows
+    });
   } catch (e: any) {
     return res.status(500).json({ error: 'Unhandled server error', message: String(e?.message || e) });
   }
