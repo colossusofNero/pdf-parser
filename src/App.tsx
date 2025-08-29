@@ -1,11 +1,14 @@
-// App.tsx - Complete fix for all identified issues
+// App.tsx - Vite-safe pdf.js worker import (no dynamic import)
 import React, { useState } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { FileUpload } from './components/FileUpload';
 import { Card, CardContent } from './components/ui/card';
 
+// pdf.js ESM + worker (Vite)
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
+// @ts-ignore
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 // Local interface definitions to avoid import conflicts
 interface ExtractedData {
@@ -54,10 +57,7 @@ const App: React.FC = () => {
 
   // Filename generation (local to avoid import issues)
   const sanitizeFileName = (text: string): string => {
-    return text
-      .replace(/[<>:"/\\|?*]/g, '') // Remove illegal characters
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
+    return text.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, ' ').trim();
   };
 
   const generateFileName = (data: ExtractedData): string => {
@@ -66,117 +66,30 @@ const App: React.FC = () => {
     return `RCGV_${name}_${address}.pdf`;
   };
 
- const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
-  try {
-    console.log('Starting PDF extraction for:', file.name);
-
-    const arrayBuffer = await file.arrayBuffer();
-    // @ts-ignore
-    const loadingTask = pdfjsLib.getDocument({
-      data: arrayBuffer,
-      verbosity: 0
-    });
-
-    const pdf = await loadingTask.promise;
-    console.log(`PDF loaded successfully, ${pdf.numPages} pages`);
-
-    const page = await pdf.getPage(1);
-    const textContent = await page.getTextContent();
-
-    const fullText = textContent.items
-      // @ts-ignore
-      .map((item: any) => item.str || '')
-      .join(' ');
-
-    console.log('Extracted text length:', fullText.length);
-
-    const extractedData: ExtractedData = {};
-    const metadataRegex = /\|\|([^|:]+):([^|]*)\|\|/g;
-    let match;
-    while ((match = metadataRegex.exec(fullText)) !== null) {
-      const [, key, value] = match;
-      const cleanKey = key.trim();
-      const cleanValue = value.trim();
-      if (cleanKey && cleanValue) {
-        if (
-          [
-            'Purchase_Price',
-            'Capital_Improvements_Amount',
-            'Building_Value',
-            'Know_Land_Value',
-            'SqFt_Building',
-            'Acres_Land',
-            'Year_Built',
-            'Bid_Amount_Original',
-            'Pay_Upfront',
-            'Pay_50_50_Amount',
-            'Pay_Over_Time',
-            'Rush_Fee',
-            'Multiple_Properties_Quote',
-            'First_Year_Bonus_Quote',
-            'Tax_Year'
-          ].includes(cleanKey)
-        ) {
-          const numValue = parseFloat(cleanValue.replace(/[,$]/g, ''));
-          if (!isNaN(numValue)) (extractedData as any)[cleanKey] = numValue;
-        } else {
-          (extractedData as any)[cleanKey] = cleanValue;
-        }
-      }
-    }
-
-    if (!extractedData.Name_of_Prospect || !extractedData.Address_of_Property) {
-      throw new Error('Required fields missing from PDF: Name_of_Prospect or Address_of_Property');
-    }
-
-    return { ...extractedData, file };
-  } catch (error) {
-    console.error('PDF extraction failed:', error);
-    throw new Error(`Failed to extract PDF data: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-};
-      const pdfjsLib = await import('pdfjs-dist');
-      // Use CDN worker to avoid deployment issues
-      // @ts-ignore
-      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-      console.log('PDF.js loaded, processing file...');
-
+  // Client-side PDF extraction with robust error handling
+  const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
+    try {
+      console.log('Starting PDF extraction for:', file.name);
       const arrayBuffer = await file.arrayBuffer();
       // @ts-ignore
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer,
-        verbosity: 0
-      });
-
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, verbosity: 0 });
       const pdf = await loadingTask.promise;
       console.log(`PDF loaded successfully, ${pdf.numPages} pages`);
 
       // Extract text from first page
       const page = await pdf.getPage(1);
       const textContent = await page.getTextContent();
-
-      const fullText = textContent.items
-        // @ts-ignore
-        .map((item: any) => item.str || '')
-        .join(' ');
-
+      const fullText = textContent.items.map((item: any) => item.str || '').join(' ');
       console.log('Extracted text length:', fullText.length);
 
       // Enhanced metadata parsing
       const extractedData: ExtractedData = {};
-
-      // Look for the metadata pattern: ||key:value||
       const metadataRegex = /\|\|([^|:]+):([^|]*)\|\|/g;
       let match;
-
-      console.log('Parsing metadata...');
       while ((match = metadataRegex.exec(fullText)) !== null) {
         const [, key, value] = match;
         const cleanKey = key.trim();
         const cleanValue = value.trim();
-
-        console.log(`Found: ${cleanKey} = ${cleanValue}`);
-
         if (cleanKey && cleanValue) {
           if (
             [
@@ -198,16 +111,12 @@ const App: React.FC = () => {
             ].includes(cleanKey)
           ) {
             const numValue = parseFloat(cleanValue.replace(/[,$]/g, ''));
-            if (!isNaN(numValue)) {
-              (extractedData as any)[cleanKey] = numValue;
-            }
+            if (!isNaN(numValue)) (extractedData as any)[cleanKey] = numValue;
           } else {
             (extractedData as any)[cleanKey] = cleanValue;
           }
         }
       }
-
-      console.log('Final extracted data:', extractedData);
 
       if (!extractedData.Name_of_Prospect || !extractedData.Address_of_Property) {
         throw new Error('Required fields missing from PDF: Name_of_Prospect or Address_of_Property');
@@ -225,39 +134,24 @@ const App: React.FC = () => {
     console.log('Starting Caspio submission...');
     const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
     const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
-
     if (!token || !apiUrl) {
       throw new Error('Missing Caspio configuration. Check VITE_CASPIO_ACCESS_TOKEN and VITE_CASPIO_API_URL');
     }
-
     const { file, ...submitData } = data;
-
-    // Remove any undefined values without unsafe index deletes
-    const cleanedSubmitData = Object.fromEntries(
-      Object.entries(submitData).filter(([, v]) => v !== undefined)
-    );
-
+    const cleanedSubmitData = Object.fromEntries(Object.entries(submitData).filter(([, v]) => v !== undefined));
     console.log('Submitting to Caspio:', cleanedSubmitData);
     console.log('API URL:', apiUrl);
-
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(cleanedSubmitData)
     });
-
     console.log('Caspio response status:', response.status);
-
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Caspio error response:', errorText);
       throw new Error(`Caspio submission failed: ${response.status} - ${errorText}`);
     }
-
     const responseText = await response.text();
     console.log('Caspio success response:', responseText || '(empty response)');
   };
@@ -284,12 +178,10 @@ const App: React.FC = () => {
       toast.error('Please upload PDF and fill in all required fields');
       return;
     }
-
     setIsLoading(true);
     try {
       const fileName = generateFileName(extractedData);
       console.log('Generated filename:', fileName);
-
       const submissionData: ExtractedData = {
         ...extractedData,
         Contact_Name_First: userData.firstName.trim(),
@@ -298,12 +190,9 @@ const App: React.FC = () => {
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
         Quote_pdf: `/${fileName}`
       };
-
       console.log('Final submission data:', submissionData);
-
       await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');
-
       setExtractedData(null);
       setUserData(null);
       setSelectedFile(null);
@@ -320,100 +209,8 @@ const App: React.FC = () => {
     setExtractedData({ ...extractedData, [field]: value });
   };
 
-  // Simple data display component (inline to avoid interface issues)
   const DataDisplay: React.FC<{ data: ExtractedData }> = ({ data }) => {
     const formatValue = (value: any): string => {
       if (value === null || value === undefined) return '';
-      if (typeof value === 'number') {
-        return value.toLocaleString();
-      }
-      return value.toString();
-    };
-
-    const fields = [
-      { key: 'Name_of_Prospect', label: 'Prospect Name' },
-      { key: 'Address_of_Property', label: 'Property Address' },
-      { key: 'Zip_Code', label: 'Zip Code' },
-      { key: 'Purchase_Price', label: 'Purchase Price' },
-      { key: 'Building_Value', label: 'Building Value' },
-      { key: 'Know_Land_Value', label: 'Land Value' },
-      { key: 'Date_of_Purchase', label: 'Purchase Date' },
-      { key: 'SqFt_Building', label: 'Building Sq Ft' },
-      { key: 'Acres_Land', label: 'Land Acres' },
-      { key: 'Type_of_Property_Quote', label: 'Property Type' },
-      { key: 'Bid_Amount_Original', label: 'Original Bid' },
-      { key: 'Pay_Upfront', label: 'Upfront Payment' },
-      { key: 'Tax_Year', label: 'Tax Year' }
-    ];
-
-    return (
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Extracted Data</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {fields.map(({ key, label }) => (
-            <div key={key} className="space-y-1">
-              <label className="text-sm font-medium text-gray-600">{label}:</label>
-              <input
-                type="text"
-                value={formatValue((data as any)[key])}
-                onChange={(e) => handleEditData(key, e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                disabled={isLoading}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">RCG Valuation PDF Processor</h1>
-          <p className="text-gray-600">Upload your cost segregation quote PDF to extract and submit data to Caspio</p>
-        </div>
-
-        <div className="max-w-4xl mx-auto space-y-6">
-          {!extractedData ? (
-            <Card>
-              <CardContent className="p-6">
-                <FileUpload onFileSelect={handleFileUploadAndUserData} isLoading={isLoading} />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="p-6">
-                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h3 className="font-medium text-blue-800 mb-2">File Information</h3>
-                  <p className="text-sm text-blue-700">
-                    <strong>Original:</strong> {selectedFile?.name}
-                  </p>
-                  <p className="text-sm text-blue-700">
-                    <strong>Caspio filename:</strong> {generateFileName(extractedData)}
-                  </p>
-                </div>
-
-                <DataDisplay data={extractedData} />
-
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={handleSubmitToCaspio}
-                    disabled={isLoading}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                  >
-                    {isLoading ? 'Submitting...' : 'Submit to Caspio'}
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
-      <Toaster position="top-right" />
-    </div>
-  );
-};
-
-export default App;
+      if (typeof value === 'number') return value.toLocaleString();
+      return val
