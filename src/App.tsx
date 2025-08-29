@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useState } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import FileUpload from './components/FileUpload';
@@ -37,7 +38,7 @@ interface ExtractedData {
   Contact_Phone?: string;
   Email_from_App?: string;
   Quote_pdf?: string;
-  file?: File;
+  file?: File; // internal only, never sent to Caspio and not shown in UI
 }
 
 interface UserData {
@@ -47,6 +48,7 @@ interface UserData {
   smsPhone?: string;
 }
 
+// schema
 const REQUIRED_KEYS = [
   'Name_of_Prospect',
   'Address_of_Property',
@@ -96,6 +98,7 @@ const INTEGER_KEYS = new Set<string>([
 
 const DATE_KEYS = new Set<string>(['Date_of_Purchase', 'CapEx_Date']);
 
+// helpers
 const normalizeAscii = (s: string) =>
   s
     .normalize('NFKC')
@@ -128,12 +131,40 @@ const generateFileName = (data: ExtractedData): string => {
   return `RCGV_${name}_${address}.pdf`;
 };
 
+// form fields to show (no "file")
+const TABLE_FIELDS: Array<{ key: keyof ExtractedData; label: string; readonly?: boolean }> = [
+  { key: 'Name_of_Prospect', label: 'Name_of_Prospect' },
+  { key: 'Address_of_Property', label: 'Address_of_Property' },
+  { key: 'Zip_Code', label: 'Zip_Code' },
+  { key: 'Purchase_Price', label: 'Purchase_Price' },
+  { key: 'Capital_Improvements_Amount', label: 'Capital_Improvements_Amount' },
+  { key: 'Building_Value', label: 'Building_Value' },
+  { key: 'Know_Land_Value', label: 'Know_Land_Value' },
+  { key: 'Date_of_Purchase', label: 'Date_of_Purchase' },
+  { key: 'SqFt_Building', label: 'SqFt_Building' },
+  { key: 'Acres_Land', label: 'Acres_Land' },
+  { key: 'Year_Built', label: 'Year_Built' },
+  { key: 'Bid_Amount_Original', label: 'Bid_Amount_Original' },
+  { key: 'Pay_Upfront', label: 'Pay_Upfront' },
+  { key: 'Pay_50_50_Amount', label: 'Pay_50_50_Amount' },
+  { key: 'Pay_Over_Time', label: 'Pay_Over_Time' },
+  { key: 'Rush_Fee', label: 'Rush_Fee' },
+  { key: 'Multiple_Properties_Quote', label: 'Multiple_Properties_Quote' },
+  { key: 'First_Year_Bonus_Quote', label: 'First_Year_Bonus_Quote' },
+  { key: 'Tax_Year', label: 'Tax_Year' },
+  { key: 'Tax_Deadline_Quote', label: 'Tax_Deadline_Quote' },
+  { key: 'CapEx_Date', label: 'CapEx_Date' },
+  { key: 'Type_of_Property_Quote', label: 'Type_of_Property_Quote' },
+  { key: 'Quote_pdf', label: 'Quote_pdf', readonly: true }
+];
+
 const App: React.FC = () => {
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  // parse page 1 metadata "||Key:Value||"
   const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
     const arrayBuffer = await file.arrayBuffer();
     // @ts-ignore
@@ -198,10 +229,10 @@ const App: React.FC = () => {
     return { ...out, file };
   };
 
+  // simple submit that strips file; replace later with OAuth flow if needed
   const submitToCaspio = async (data: ExtractedData): Promise<void> => {
-    // TODO: integrate with proper OAuth token flow as shown earlier
-    const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
-    const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
+    const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN; // temporary
+    const apiUrl = import.meta.env.VITE_CASPIO_API_URL;     // temporary
     if (!token || !apiUrl) throw new Error('Missing Caspio configuration');
     const { file, ...record } = data;
     const payload = Object.fromEntries(Object.entries(record).filter(([, v]) => v !== undefined));
@@ -245,7 +276,7 @@ const App: React.FC = () => {
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
-        Quote_pdf: `/${fileName}`
+        Quote_pdf: `/${fileName}` // reference only; actual upload handled elsewhere if desired
       };
       await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');
@@ -267,21 +298,21 @@ const App: React.FC = () => {
   const DataDisplay: React.FC<{ data: ExtractedData }> = ({ data }) => {
     const formatValue = (value: any): string => {
       if (value === null || value === undefined) return '';
-      return value.toString();
+      return typeof value === 'number' ? String(value) : String(value);
     };
     return (
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Extracted Data</h3>
         <div className="grid grid-cols-2 gap-4">
-          {Object.keys(data).map((key) => (
-            <div key={key} className="space-y-1">
-              <label className="text-sm font-medium text-gray-600">{key}:</label>
+          {TABLE_FIELDS.map(({ key, label, readonly }) => (
+            <div key={String(key)} className="space-y-1">
+              <label className="text-sm font-medium text-gray-600">{label}:</label>
               <input
                 type="text"
-                value={formatValue((data as any)[key])}
-                onChange={(e) => handleEditData(key, e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded"
-                disabled={isLoading}
+                value={formatValue(data[key])}
+                onChange={(e) => !readonly && handleEditData(String(key), e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                disabled={isLoading || !!readonly}
               />
             </div>
           ))}
@@ -293,7 +324,10 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-100 py-8">
       <div className="container mx-auto px-4">
-        <h1 className="text-3xl font-bold mb-4 text-center">RCG Valuation PDF Processor</h1>
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">RCG Valuation PDF Processor</h1>
+          <p className="text-gray-600">Upload your cost segregation quote PDF to extract and submit data to Caspio</p>
+        </div>
         <div className="max-w-4xl mx-auto space-y-6">
           {!extractedData ? (
             <Card>
@@ -304,11 +338,18 @@ const App: React.FC = () => {
           ) : (
             <Card>
               <CardContent className="p-6">
-                <p className="mb-4"><strong>Original file:</strong> {selectedFile?.name}</p>
-                <p className="mb-4"><strong>Caspio filename:</strong> {generateFileName(extractedData)}</p>
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="font-medium text-blue-800 mb-2">File Information</h3>
+                  <p className="text-sm text-blue-700"><strong>Original:</strong> {selectedFile?.name}</p>
+                  <p className="text-sm text-blue-700"><strong>Caspio filename:</strong> {generateFileName(extractedData)}</p>
+                </div>
                 <DataDisplay data={extractedData} />
                 <div className="mt-6 flex justify-end">
-                  <button onClick={handleSubmitToCaspio} disabled={isLoading} className="px-6 py-2 bg-blue-600 text-white rounded-lg">
+                  <button
+                    onClick={handleSubmitToCaspio}
+                    disabled={isLoading}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
                     {isLoading ? 'Submitting...' : 'Submit to Caspio'}
                   </button>
                 </div>
