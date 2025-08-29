@@ -2,8 +2,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { google } from 'googleapis';
 
-export const config = { runtime: 'nodejs20.x' };
+export const config = { runtime: 'nodejs' };
 
+// Column order in the sheet
 const HEADERS = [
   'Name_of_Prospect',
   'Address_of_Property',
@@ -44,9 +45,9 @@ async function readJsonBody(req: VercelRequest): Promise<any> {
   try { return JSON.parse(raw); } catch { return { _raw: raw }; }
 }
 
-
 function getSheetsClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+  // Always convert "\n" to real newlines and strip accidental surrounding quotes
   const keyRaw = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').trim().replace(/^"|"$/g, '');
   const privateKey = keyRaw.replace(/\\n/g, '\n');
 
@@ -66,10 +67,10 @@ function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Health check
+  // Health
   if (req.method === 'GET') {
+    const keyProbe = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
     return res.status(200).json({
       ok: true,
       hasEnv: {
@@ -77,7 +78,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: !!process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
         GOOGLE_SHEETS_SPREADSHEET_ID: !!process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
         GOOGLE_SHEETS_SHEET_NAME: !!process.env.GOOGLE_SHEETS_SHEET_NAME
-      }
+      },
+      keyNewlineStyle: keyProbe.includes('\n') ? 'real-newlines' : (keyProbe.includes('\\n') ? 'backslash-n' : 'unknown')
     });
   }
   if (req.method !== 'POST') {
@@ -86,9 +88,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
   const sheetName = process.env.GOOGLE_SHEETS_SHEET_NAME || 'Sheet1';
-  if (!spreadsheetId) {
-    return res.status(500).json({ error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
-  }
+  if (!spreadsheetId) return res.status(500).json({ error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
 
   let body: any;
   try {
@@ -99,22 +99,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const record: RecordIn | undefined = body?.record;
   if (!record || typeof record !== 'object') {
-    return res.status(400).json({
-      error: 'Bad Request',
-      hint: 'POST JSON with { "record": { ...fields } }'
-    });
+    return res.status(400).json({ error: 'Bad Request', hint: 'POST JSON with { "record": { ...fields } }' });
   }
 
   try {
     const sheets = getSheetsClient();
 
     // Ensure header row
-    const headerResp = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!1:1`
-    });
+    const headerResp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetName}!1:1` });
     const headerRow: string[] = headerResp.data.values?.[0] || [];
-
     if (headerRow.length === 0) {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
@@ -126,23 +119,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const missing = HEADERS.filter(h => !headerRow.includes(h));
       const extra = headerRow.filter(h => !HEADERS.includes(h as any));
       if (missing.length || extra.length) {
-        return res.status(422).json({
-          error: 'Header mismatch',
-          missing,
-          extra,
-          expected: HEADERS,
-          got: headerRow
-        });
+        return res.status(422).json({ error: 'Header mismatch', missing, extra, expected: HEADERS, got: headerRow });
       }
     }
 
-    // Build row in the exact header order
+    // Build row in exact header order
     const row = (HEADERS as unknown as string[]).map(k => {
       const v = (record as any)[k];
       return v === undefined || v === null ? '' : v;
     });
 
-    // Append row
+    // Append
     const append = await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: `${sheetName}!A1`,
