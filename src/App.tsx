@@ -213,4 +213,88 @@ const App: React.FC = () => {
     const formatValue = (value: any): string => {
       if (value === null || value === undefined) return '';
       if (typeof value === 'number') return value.toLocaleString();
-      return val
+      return value.toString();
+    };
+    const fields = [
+      { key: 'Name_of_Prospect', label: 'Prospect Name' },
+      { key: 'Address_of_Property', label: 'Property Address' },
+      { key: 'Zip_Code', label: 'Zip Code' },
+      { key: 'Purchase_Price', label: 'Purchase Price' },
+      { key: 'Building_Value', label: 'Building Value' },
+      { key: 'Know_Land_Value', label: 'Land Value' },
+      { key: 'Date_of_Purchase', label: 'Purchase Date' },
+      { key: 'SqFt_Building', label: 'Building Sq Ft' },
+      { key: 'Acres_Land', label: 'Land Acres' },
+      { key: 'Type_of_Property_Quote', label: 'Property Type' },
+      { key: 'Bid_Amount_Original', label: 'Original Bid' },
+      { key: 'Pay_Upfront', label: 'Upfront Payment' },
+      { key: 'Tax_Year', label: 'Tax Year' }
+    ];
+    return (
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Extracted Data</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {fields.map(({ key, label }) => (
+            <div key={key} className="space-y-1">
+              <label className="text-sm font-medium text-gray-600">{label}:</label>
+              <input
+                type="text"
+                value={formatValue((data as any)[key])}
+                onChange={(e) => handleEditData(key, e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                disabled={isLoading}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 py-8">
+      <div className="container mx-auto px-4">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">RCG Valuation PDF Processor</h1>
+          <p className="text-gray-600">Upload your cost segregation quote PDF to extract and submit data to Caspio</p>
+        </div>
+        <div className="max-w-4xl mx-auto space-y-6">
+          {!extractedData ? (
+            <Card>
+              <CardContent className="p-6">
+                <FileUpload onFileSelect={handleFileUploadAndUserData} isLoading={isLoading} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="font-medium text-blue-800 mb-2">File Information</h3>
+                  <p className="text-sm text-blue-700">
+                    <strong>Original:</strong> {selectedFile?.name}
+                  </p>
+                  <p className="text-sm text-blue-700">
+                    <strong>Caspio filename:</strong> {generateFileName(extractedData)}
+                  </p>
+                </div>
+                <DataDisplay data={extractedData} />
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={handleSubmitToCaspio}
+                    disabled={isLoading}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isLoading ? 'Submitting...' : 'Submit to Caspio'}
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+      <Toaster position="top-right" />
+    </div>
+  );
+};
+
+export default App;
