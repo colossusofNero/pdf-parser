@@ -1,3 +1,4 @@
+// src/components/FileUpload.tsx  (default export; replace entire file)
 import React, { useState } from 'react';
 
 interface UserData {
