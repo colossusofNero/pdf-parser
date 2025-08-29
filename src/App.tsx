@@ -67,21 +67,19 @@ const App: React.FC = () => {
   const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
     try {
       console.log('Starting PDF extraction for:', file.name);
-      
-      // Dynamic import of PDF.js with error handling
       const pdfjsLib = await import('pdfjs-dist');
-      
       // Use CDN worker to avoid deployment issues
+      // @ts-ignore
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
-      
       console.log('PDF.js loaded, processing file...');
 
       const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ 
+      // @ts-ignore
+      const loadingTask = pdfjsLib.getDocument({
         data: arrayBuffer,
-        verbosity: 0 // Reduce console noise
+        verbosity: 0
       });
-      
+
       const pdf = await loadingTask.promise;
       console.log(`PDF loaded successfully, ${pdf.numPages} pages`);
 
@@ -90,6 +88,7 @@ const App: React.FC = () => {
       const textContent = await page.getTextContent();
 
       const fullText = textContent.items
+        // @ts-ignore
         .map((item: any) => item.str || '')
         .join(' ');
 
@@ -97,45 +96,56 @@ const App: React.FC = () => {
 
       // Enhanced metadata parsing
       const extractedData: ExtractedData = {};
-      
+
       // Look for the metadata pattern: ||key:value||
       const metadataRegex = /\|\|([^|:]+):([^|]*)\|\|/g;
       let match;
-      
+
       console.log('Parsing metadata...');
       while ((match = metadataRegex.exec(fullText)) !== null) {
         const [, key, value] = match;
         const cleanKey = key.trim();
         const cleanValue = value.trim();
-        
+
         console.log(`Found: ${cleanKey} = ${cleanValue}`);
-        
+
         if (cleanKey && cleanValue) {
-          // Handle numeric fields
-          if (['Purchase_Price', 'Capital_Improvements_Amount', 'Building_Value', 'Know_Land_Value', 
-               'SqFt_Building', 'Acres_Land', 'Year_Built', 'Bid_Amount_Original', 'Pay_Upfront', 
-               'Pay_50_50_Amount', 'Pay_Over_Time', 'Rush_Fee', 'Multiple_Properties_Quote', 
-               'First_Year_Bonus_Quote', 'Tax_Year'].includes(cleanKey)) {
+          if (
+            [
+              'Purchase_Price',
+              'Capital_Improvements_Amount',
+              'Building_Value',
+              'Know_Land_Value',
+              'SqFt_Building',
+              'Acres_Land',
+              'Year_Built',
+              'Bid_Amount_Original',
+              'Pay_Upfront',
+              'Pay_50_50_Amount',
+              'Pay_Over_Time',
+              'Rush_Fee',
+              'Multiple_Properties_Quote',
+              'First_Year_Bonus_Quote',
+              'Tax_Year'
+            ].includes(cleanKey)
+          ) {
             const numValue = parseFloat(cleanValue.replace(/[,$]/g, ''));
             if (!isNaN(numValue)) {
               (extractedData as any)[cleanKey] = numValue;
             }
           } else {
-            // String fields
             (extractedData as any)[cleanKey] = cleanValue;
           }
         }
       }
 
       console.log('Final extracted data:', extractedData);
-      
-      // Validate required fields
+
       if (!extractedData.Name_of_Prospect || !extractedData.Address_of_Property) {
         throw new Error('Required fields missing from PDF: Name_of_Prospect or Address_of_Property');
       }
 
       return { ...extractedData, file };
-
     } catch (error) {
       console.error('PDF extraction failed:', error);
       throw new Error(`Failed to extract PDF data: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -145,36 +155,31 @@ const App: React.FC = () => {
   // Direct Caspio submission (bypass serverless issues)
   const submitToCaspio = async (data: ExtractedData): Promise<void> => {
     console.log('Starting Caspio submission...');
-    
-    // Get environment variables
     const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN;
     const apiUrl = import.meta.env.VITE_CASPIO_API_URL;
-    
+
     if (!token || !apiUrl) {
       throw new Error('Missing Caspio configuration. Check VITE_CASPIO_ACCESS_TOKEN and VITE_CASPIO_API_URL');
     }
 
-    // Prepare data (remove file property)
     const { file, ...submitData } = data;
-    
-    // Remove any undefined values
-    Object.keys(submitData).forEach(key => {
-      if (submitData[key as keyof typeof submitData] === undefined) {
-        delete submitData[key as keyof typeof submitData];
-      }
-    });
 
-    console.log('Submitting to Caspio:', submitData);
+    // Remove any undefined values without unsafe index deletes
+    const cleanedSubmitData = Object.fromEntries(
+      Object.entries(submitData).filter(([, v]) => v !== undefined)
+    );
+
+    console.log('Submitting to Caspio:', cleanedSubmitData);
     console.log('API URL:', apiUrl);
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        Accept: 'application/json'
       },
-      body: JSON.stringify(submitData)
+      body: JSON.stringify(cleanedSubmitData)
     });
 
     console.log('Caspio response status:', response.status);
@@ -189,10 +194,7 @@ const App: React.FC = () => {
     console.log('Caspio success response:', responseText || '(empty response)');
   };
 
-  const handleFileUploadAndUserData = async (
-    file: File,
-    userInputData: UserData
-  ) => {
+  const handleFileUploadAndUserData = async (file: File, userInputData: UserData) => {
     setIsLoading(true);
     try {
       console.log('Processing file and user data...');
@@ -217,28 +219,23 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
-      // Generate filename from extracted PDF data
       const fileName = generateFileName(extractedData);
       console.log('Generated filename:', fileName);
 
-      // Prepare final submission data
       const submissionData: ExtractedData = {
         ...extractedData,
-        // User contact info
         Contact_Name_First: userData.firstName.trim(),
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
-        // File reference
         Quote_pdf: `/${fileName}`
       };
 
       console.log('Final submission data:', submissionData);
-      
+
       await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');
-      
-      // Reset form
+
       setExtractedData(null);
       setUserData(null);
       setSelectedFile(null);
@@ -290,7 +287,7 @@ const App: React.FC = () => {
               <label className="text-sm font-medium text-gray-600">{label}:</label>
               <input
                 type="text"
-                value={formatValue(data[key as keyof ExtractedData])}
+                value={formatValue((data as any)[key])}
                 onChange={(e) => handleEditData(key, e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                 disabled={isLoading}
@@ -306,22 +303,15 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-100 py-8">
       <div className="container mx-auto px-4">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            RCG Valuation PDF Processor
-          </h1>
-          <p className="text-gray-600">
-            Upload your cost segregation quote PDF to extract and submit data to Caspio
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">RCG Valuation PDF Processor</h1>
+          <p className="text-gray-600">Upload your cost segregation quote PDF to extract and submit data to Caspio</p>
         </div>
 
         <div className="max-w-4xl mx-auto space-y-6">
           {!extractedData ? (
             <Card>
               <CardContent className="p-6">
-                <FileUpload 
-                  onFileSelect={handleFileUploadAndUserData}
-                  isLoading={isLoading}
-                />
+                <FileUpload onFileSelect={handleFileUploadAndUserData} isLoading={isLoading} />
               </CardContent>
             </Card>
           ) : (
@@ -336,9 +326,9 @@ const App: React.FC = () => {
                     <strong>Caspio filename:</strong> {generateFileName(extractedData)}
                   </p>
                 </div>
-                
+
                 <DataDisplay data={extractedData} />
-                
+
                 <div className="mt-6 flex justify-end">
                   <button
                     onClick={handleSubmitToCaspio}
