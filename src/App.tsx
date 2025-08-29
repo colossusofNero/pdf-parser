@@ -4,6 +4,9 @@ import { toast, Toaster } from 'react-hot-toast';
 import { FileUpload } from './components/FileUpload';
 import { Card, CardContent } from './components/ui/card';
 
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
+
 // Local interface definitions to avoid import conflicts
 interface ExtractedData {
   Name_of_Prospect?: string;
@@ -63,14 +66,79 @@ const App: React.FC = () => {
     return `RCGV_${name}_${address}.pdf`;
   };
 
-  // Client-side PDF extraction with robust error handling
-  const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
-    try {
-      console.log('Starting PDF extraction for:', file.name);
+ const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
+  try {
+    console.log('Starting PDF extraction for:', file.name);
+
+    const arrayBuffer = await file.arrayBuffer();
+    // @ts-ignore
+    const loadingTask = pdfjsLib.getDocument({
+      data: arrayBuffer,
+      verbosity: 0
+    });
+
+    const pdf = await loadingTask.promise;
+    console.log(`PDF loaded successfully, ${pdf.numPages} pages`);
+
+    const page = await pdf.getPage(1);
+    const textContent = await page.getTextContent();
+
+    const fullText = textContent.items
+      // @ts-ignore
+      .map((item: any) => item.str || '')
+      .join(' ');
+
+    console.log('Extracted text length:', fullText.length);
+
+    const extractedData: ExtractedData = {};
+    const metadataRegex = /\|\|([^|:]+):([^|]*)\|\|/g;
+    let match;
+    while ((match = metadataRegex.exec(fullText)) !== null) {
+      const [, key, value] = match;
+      const cleanKey = key.trim();
+      const cleanValue = value.trim();
+      if (cleanKey && cleanValue) {
+        if (
+          [
+            'Purchase_Price',
+            'Capital_Improvements_Amount',
+            'Building_Value',
+            'Know_Land_Value',
+            'SqFt_Building',
+            'Acres_Land',
+            'Year_Built',
+            'Bid_Amount_Original',
+            'Pay_Upfront',
+            'Pay_50_50_Amount',
+            'Pay_Over_Time',
+            'Rush_Fee',
+            'Multiple_Properties_Quote',
+            'First_Year_Bonus_Quote',
+            'Tax_Year'
+          ].includes(cleanKey)
+        ) {
+          const numValue = parseFloat(cleanValue.replace(/[,$]/g, ''));
+          if (!isNaN(numValue)) (extractedData as any)[cleanKey] = numValue;
+        } else {
+          (extractedData as any)[cleanKey] = cleanValue;
+        }
+      }
+    }
+
+    if (!extractedData.Name_of_Prospect || !extractedData.Address_of_Property) {
+      throw new Error('Required fields missing from PDF: Name_of_Prospect or Address_of_Property');
+    }
+
+    return { ...extractedData, file };
+  } catch (error) {
+    console.error('PDF extraction failed:', error);
+    throw new Error(`Failed to extract PDF data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
       const pdfjsLib = await import('pdfjs-dist');
       // Use CDN worker to avoid deployment issues
       // @ts-ignore
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
       console.log('PDF.js loaded, processing file...');
 
       const arrayBuffer = await file.arrayBuffer();
