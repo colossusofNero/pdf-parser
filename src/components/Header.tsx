@@ -9,7 +9,7 @@ export const Header: React.FC = () => (
     </h1>
     <p className="mt-2 text-gray-600 flex items-center">
       <Server className="w-4 h-4 mr-2" />
-      Upload PDFs and process property data directly to Caspio
+      Upload PDFs and process property data to Google Sheets
     </p>
   </header>
 );

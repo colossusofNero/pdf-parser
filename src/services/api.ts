@@ -1,4 +1,4 @@
-// services/api.ts - Fixed syntax errors and added generateFileName
+// services/api.ts - Updated for Google Sheets integration
 import { parsePDF } from './pdfParser';
 
 export interface ExtractedData {
@@ -42,7 +42,7 @@ const sanitizeFileName = (text: string): string => {
     .trim();
 };
 
-// EXPORTED: Helper function to generate proper filename from PDF data
+// Helper function to generate proper filename from PDF data
 export const generateFileName = (extractedData: PartialExtractedData): string => {
   const prospectName = sanitizeFileName(extractedData.Name_of_Prospect || 'Unknown');
   const address = sanitizeFileName(extractedData.Address_of_Property || 'Unknown Address');
@@ -50,37 +50,36 @@ export const generateFileName = (extractedData: PartialExtractedData): string =>
   return `RCGV_${prospectName}_${address}.pdf`;
 };
 
-// Get environment config
+// Get environment config for Google Sheets
 const getEnvironmentConfig = () => {
   try {
-    const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN || 
-                  import.meta.env.VITE_CASPIO_API_KEY || '';
-    const apiUrl = import.meta.env.VITE_CASPIO_API_URL || '';
-    const fileUploadUrl = import.meta.env.VITE_CASPIO_FILE_UPLOAD_URL || '';
+    const googleSheetsUrl = import.meta.env.VITE_GOOGLE_SHEETS_URL || '';
+    const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY || '';
+    const spreadsheetId = import.meta.env.VITE_GOOGLE_SPREADSHEET_ID || '';
     
-    console.log('Environment Variables Debug:', {
-      hasViteToken: !!token,
-      hasViteApiUrl: !!apiUrl,
-      hasViteFileUrl: !!fileUploadUrl,
-      viteTokenLength: token ? token.length : 0,
+    console.log('Google Sheets Environment Variables:', {
+      hasGoogleSheetsUrl: !!googleSheetsUrl,
+      hasGoogleApiKey: !!googleApiKey,
+      hasSpreadsheetId: !!spreadsheetId,
       isDev: import.meta.env.DEV,
       isProd: import.meta.env.PROD,
       mode: import.meta.env.MODE
     });
     
-    return { token, apiUrl, fileUploadUrl };
+    return { googleSheetsUrl, googleApiKey, spreadsheetId };
   } catch (error) {
     console.error('Failed to access environment variables:', error);
-    return { token: '', apiUrl: '', fileUploadUrl: '' };
+    return { googleSheetsUrl: '', googleApiKey: '', spreadsheetId: '' };
   }
 };
 
-// Date formatting helper
-const formatDate = (dateString?: string): string => {
+// Date formatting helper for Google Sheets
+const formatDateForGoogleSheets = (dateString?: string): string => {
   if (!dateString) return '';
   try {
     const date = new Date(dateString);
     if (!isNaN(date.getTime())) {
+      // Google Sheets prefers MM/DD/YYYY format
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       const day = date.getDate().toString().padStart(2, '0');
       const year = date.getFullYear();
@@ -109,94 +108,36 @@ export const extractPdfData = async (file: File): Promise<PartialExtractedData> 
   }
 };
 
-// File upload with improved error handling
-export const uploadFileToCaspio = async (file: File): Promise<string> => {
+// Upload file to Google Drive (placeholder - requires Google Drive API setup)
+export const uploadFileToGoogleDrive = async (file: File): Promise<string> => {
   if (!file) {
     throw new Error('No file provided');
   }
 
-  const { token, fileUploadUrl } = getEnvironmentConfig();
-
-  // Try proxy first (skip for now since it's failing)
-  console.log('Skipping proxy upload (was failing), attempting direct upload...');
-
-  // Direct upload to Caspio
-  if (!fileUploadUrl || !token) {
-    console.warn('Missing file upload configuration, returning filename only');
-    return file.name;
-  }
-
-  try {
-    console.log('Attempting direct file upload to Caspio...');
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch(fileUploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      },
-      body: formData
-    });
-
-    console.log('File upload response status:', response.status);
-    console.log('File upload response headers:', Object.fromEntries(response.headers.entries()));
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Direct upload failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText
-      });
-      // Don't fail completely, just return filename
-      console.log('File upload failed, continuing with filename only');
-      return file.name;
-    }
-
-    // Try to parse response
-    const responseText = await response.text();
-    console.log('File upload raw response:', responseText);
-
-    let responseData;
-    try {
-      responseData = JSON.parse(responseText);
-      console.log('Direct upload successful:', responseData);
-    } catch (parseError) {
-      console.log('Could not parse upload response as JSON, assuming success');
-      responseData = { fileUrl: file.name };
-    }
-    
-    return responseData.fileUrl || responseData.data?.fileUrl || file.name;
-
-  } catch (error) {
-    console.error('Direct upload error:', error);
-    console.log('File upload failed, continuing with filename only');
-    return file.name;
-  }
+  console.log('File upload to Google Drive not yet implemented');
+  console.log('Returning filename for now:', file.name);
+  
+  // TODO: Implement Google Drive API integration
+  // For now, just return the filename
+  return file.name;
 };
 
-// Submit data to Caspio with robust response handling
-export const submitToCaspio = async (data: PartialExtractedData): Promise<boolean> => {
+// Submit data to Google Sheets
+export const submitToGoogleSheets = async (data: PartialExtractedData): Promise<boolean> => {
   const config = getEnvironmentConfig();
 
-  if (!config.token) {
-    throw new Error('Caspio access token is not configured');
-  }
-
-  if (!config.apiUrl) {
-    throw new Error('Caspio API URL is not configured');
+  if (!config.googleSheetsUrl && !config.spreadsheetId) {
+    throw new Error('Google Sheets configuration is missing. Please set VITE_GOOGLE_SHEETS_URL or VITE_GOOGLE_SPREADSHEET_ID');
   }
 
   try {
-    console.log('Preparing data for Caspio submission...');
+    console.log('Preparing data for Google Sheets submission...');
 
-    // Format dates
+    // Format dates for Google Sheets
     const formattedData = {
       ...data,
-      Date_of_Purchase: data.Date_of_Purchase ? formatDate(data.Date_of_Purchase) : undefined,
-      CapEx_Date: data.CapEx_Date ? formatDate(data.CapEx_Date) : undefined,
+      Date_of_Purchase: data.Date_of_Purchase ? formatDateForGoogleSheets(data.Date_of_Purchase) : '',
+      CapEx_Date: data.CapEx_Date ? formatDateForGoogleSheets(data.CapEx_Date) : '',
     };
 
     // Remove file and undefined values
@@ -207,45 +148,81 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
       }
     });
 
-    console.log('Submitting to Caspio:', dataToSubmit);
-    console.log('Request details:', {
-      url: config.apiUrl,
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.token.substring(0, 20)}...`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      bodySize: JSON.stringify(dataToSubmit).length
-    });
+    console.log('Submitting to Google Sheets:', dataToSubmit);
 
-    const response = await fetch(config.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(dataToSubmit)
-    });
+    // Convert data to array format for Google Sheets API
+    const rowData = [
+      dataToSubmit.Name_of_Prospect || '',
+      dataToSubmit.Address_of_Property || '',
+      dataToSubmit.Zip_Code || '',
+      dataToSubmit.Purchase_Price || 0,
+      dataToSubmit.Capital_Improvements_Amount || 0,
+      dataToSubmit.Building_Value || 0,
+      dataToSubmit.Know_Land_Value || 0,
+      dataToSubmit.Date_of_Purchase || '',
+      dataToSubmit.SqFt_Building || 0,
+      dataToSubmit.Acres_Land || 0,
+      dataToSubmit.Year_Built || 0,
+      dataToSubmit.Bid_Amount_Original || 0,
+      dataToSubmit.Pay_Upfront || 0,
+      dataToSubmit.Pay_50_50_Amount || 0,
+      dataToSubmit.Pay_Over_Time || 0,
+      dataToSubmit.Rush_Fee || 0,
+      dataToSubmit.Multiple_Properties_Quote || 0,
+      dataToSubmit.First_Year_Bonus_Quote || 0,
+      dataToSubmit.Tax_Year || 0,
+      dataToSubmit.Tax_Deadline_Quote || '',
+      dataToSubmit.Contact_Name_First || '',
+      dataToSubmit.Contact_Name_Last || '',
+      dataToSubmit.Contact_Phone || '',
+      dataToSubmit.Email_from_App || '',
+      dataToSubmit.Quote_pdf || '',
+      dataToSubmit.CapEx_Date || '',
+      dataToSubmit.Type_of_Property_Quote || ''
+    ];
 
-    console.log('Caspio response details:', {
+    let response;
+
+    if (config.googleSheetsUrl) {
+      // Use Google Apps Script Web App URL
+      console.log('Using Google Apps Script Web App URL');
+      response = await fetch(config.googleSheetsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ values: [rowData] })
+      });
+    } else if (config.googleApiKey && config.spreadsheetId) {
+      // Use Google Sheets API directly
+      console.log('Using Google Sheets API directly');
+      const sheetsApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}/values/Sheet1:append?valueInputOption=RAW&key=${config.googleApiKey}`;
+      
+      response = await fetch(sheetsApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          values: [rowData]
+        })
+      });
+    } else {
+      throw new Error('No valid Google Sheets configuration found');
+    }
+
+    console.log('Google Sheets response details:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
-      headers: Object.fromEntries(response.headers.entries()),
-      url: response.url,
-      redirected: response.redirected,
-      type: response.type
+      headers: Object.fromEntries(response.headers.entries())
     });
 
-    // Get response body as text first
     const responseText = await response.text();
-    console.log('Caspio raw response body:', responseText);
-    console.log('Response body length:', responseText.length);
+    console.log('Google Sheets raw response:', responseText);
 
     if (!response.ok) {
-      console.error('Caspio API error:', {
+      console.error('Google Sheets API error:', {
         status: response.status,
         statusText: response.statusText,
         body: responseText
@@ -255,47 +232,34 @@ export const submitToCaspio = async (data: PartialExtractedData): Promise<boolea
       if (responseText) {
         try {
           const errorJson = JSON.parse(responseText);
-          errorMessage = errorJson.message || errorJson.error || errorMessage;
+          errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
         } catch (e) {
           errorMessage = responseText || errorMessage;
         }
       }
       
-      throw new Error(`Caspio API error: ${errorMessage}`);
+      throw new Error(`Google Sheets API error: ${errorMessage}`);
     }
 
-    // Parse JSON response safely
+    // Parse response
     let responseData;
     if (responseText.trim() === '') {
-      console.log('Empty response from Caspio - assuming success');
-      responseData = { success: true, message: 'Empty response (likely success)' };
+      console.log('Empty response from Google Sheets - assuming success');
+      responseData = { success: true };
     } else {
       try {
         responseData = JSON.parse(responseText);
-        console.log('Caspio submission successful:', responseData);
+        console.log('Google Sheets submission successful:', responseData);
       } catch (parseError) {
-        console.error('Failed to parse Caspio response as JSON:', parseError);
-        console.log('Raw response was:', responseText);
-        
-        // If status is 200/201 but JSON parsing failed, still consider it success
-        if (response.status >= 200 && response.status < 300) {
-          console.log('Status indicates success despite JSON parse error');
-          responseData = { 
-            success: true, 
-            message: 'Success (non-JSON response)',
-            rawResponse: responseText 
-          };
-        } else {
-          throw new Error(`Invalid JSON response from Caspio: ${responseText}`);
-        }
+        console.log('Non-JSON response from Google Sheets, assuming success');
+        responseData = { success: true, rawResponse: responseText };
       }
     }
 
-    console.log('Final response data:', responseData);
     return true;
 
   } catch (error) {
-    console.error('Error submitting to Caspio:', error);
+    console.error('Error submitting to Google Sheets:', error);
     throw error;
   }
 };

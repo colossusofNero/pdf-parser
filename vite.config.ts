@@ -32,7 +32,7 @@ export default defineConfig({
         script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:;
         style-src 'self' 'unsafe-inline';
         worker-src 'self' blob:;
-        connect-src 'self' https://c1acc979.caspio.com;
+        connect-src 'self' https://sheets.googleapis.com https://www.googleapis.com https://script.google.com;
         img-src 'self' data:;
         font-src 'self';
       `.replace(/\s+/g, ' ').trim(),

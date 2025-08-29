@@ -77,7 +77,7 @@ export const PdfDataDisplay: React.FC<PdfDataDisplayProps> = ({ data }) => {
         );
       })}
 
-      <div className="col-span-2 text-sm text-gray-500 italic text-center mt-4">
+          Submit to Google Sheets
         * All values are extracted from the uploaded PDF
       </div>
     </div>

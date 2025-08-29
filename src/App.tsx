@@ -5,8 +5,8 @@ import { FileUpload } from './components/FileUpload';
 import { PdfDataDisplay } from './components/PdfDataDisplay';
 import { 
   extractPdfData, 
-  submitToCaspio,
-  uploadFileToCaspio,
+  submitToGoogleSheets,
+  uploadFileToGoogleDrive,
   generateFileName,
   type PartialExtractedData 
 } from './services/api';
@@ -56,9 +56,8 @@ const App: React.FC = () => {
       const fileName = generateFileName(extractedData);
       console.log('Generated filename:', fileName);
 
-      // First, upload the file with the correct name
-      // Note: Your current uploadFileToCaspio only takes one parameter, so we'll pass the filename via Quote_pdf
-      const uploadedFileName = await uploadFileToCaspio(selectedFile);
+      // Upload the file to Google Drive (if configured)
+      const uploadedFileName = await uploadFileToGoogleDrive(selectedFile);
       console.log('File uploaded with name:', uploadedFileName);
 
       // Create submission data without the file object
@@ -71,15 +70,13 @@ const App: React.FC = () => {
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
         // Use the filename generated from extracted PDF data
-        Quote_pdf: `/${fileName}` // Include the forward slash
+        Quote_pdf: fileName
       };
 
-      // Log the data being submitted to verify fields are present
-      console.log('Submitting data with filename:', submissionData.Quote_pdf);
       console.log('Full submission data:', submissionData);
 
-      await submitToCaspio(submissionData);
-      toast.success('Data successfully submitted to Caspio!');
+      await submitToGoogleSheets(submissionData);
+      toast.success('Data successfully submitted to Google Sheets!');
       
       // Reset form after successful submission
       setExtractedData(null);
@@ -110,7 +107,7 @@ const App: React.FC = () => {
             RCG Valuation PDF Processor
           </h1>
           <p className="text-gray-600">
-            Upload your cost segregation quote PDF to extract and submit data to Caspio
+            Upload your cost segregation quote PDF to extract and submit data to Google Sheets
           </p>
         </div>
 
@@ -133,7 +130,7 @@ const App: React.FC = () => {
                     <strong>Original file:</strong> {selectedFile?.name || 'Unknown'}
                   </p>
                   <p className="text-sm text-blue-700">
-                    <strong>Generated Caspio filename:</strong> {generateFileName(extractedData)}
+                    <strong>Generated filename:</strong> {generateFileName(extractedData)}
                   </p>
                   <p className="text-sm text-blue-600 mt-1">
                     This filename is generated from the prospect name and property address in the PDF
