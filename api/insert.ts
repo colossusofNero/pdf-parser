@@ -44,16 +44,28 @@ async function readJsonBody(req: VercelRequest): Promise<any> {
   try { return JSON.parse(raw); } catch { return { _raw: raw }; }
 }
 
+
 function getSheetsClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const keyRaw = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
-  const privateKey = keyRaw.includes('BEGIN PRIVATE KEY') ? keyRaw : keyRaw.replace(/\\n/g, '\n');
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+  const keyRaw = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').trim().replace(/^"|"$/g, '');
+  const privateKey = keyRaw.replace(/\\n/g, '\n');
+
   if (!email || !privateKey) {
     throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
   }
-  const auth = new google.auth.JWT(email, undefined, privateKey, ['https://www.googleapis.com/auth/spreadsheets']);
+  if (!privateKey.includes('BEGIN PRIVATE KEY') || !privateKey.includes('END PRIVATE KEY')) {
+    throw new Error('Service account private key is not a valid PEM. Ensure \\n were preserved and converted.');
+  }
+
+  const auth = new google.auth.JWT(
+    email,
+    undefined,
+    privateKey,
+    ['https://www.googleapis.com/auth/spreadsheets']
+  );
   return google.sheets({ version: 'v4', auth });
 }
+
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Health check
