@@ -1,10 +1,8 @@
-// src/App.tsx
+// src/App.tsx  (Option 1: client-side OAuth; replace entire file)
 import React, { useState } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import FileUpload from './components/FileUpload';
 import { Card, CardContent } from './components/ui/card';
-
-// pdf.js ESM + worker (Vite)
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 // @ts-ignore
@@ -38,7 +36,7 @@ interface ExtractedData {
   Contact_Phone?: string;
   Email_from_App?: string;
   Quote_pdf?: string;
-  file?: File; // internal only, never sent to Caspio and not shown in UI
+  file?: File;
 }
 
 interface UserData {
@@ -48,114 +46,103 @@ interface UserData {
   smsPhone?: string;
 }
 
+// Caspio OAuth (runtime)
+type CaspioAuth = { access_token: string; token_type: string; expires_in: number };
+const CASPIO_ACCOUNT = import.meta.env.VITE_CASPIO_ACCOUNT;
+const CASPIO_CLIENT_ID = import.meta.env.VITE_CASPIO_CLIENT_ID;
+const CASPIO_CLIENT_SECRET = import.meta.env.VITE_CASPIO_CLIENT_SECRET;
+const CASPIO_TOKEN_URL = `https://${CASPIO_ACCOUNT}.caspio.com/oauth/token`;
+const CASPIO_REST_BASE = `https://${CASPIO_ACCOUNT}.caspio.com/rest/v2`;
+const tokenCacheKey = 'caspio_token_cache_v2';
+const readCachedToken = (): { token: string; exp: number } | null => {
+  try {
+    const s = localStorage.getItem(tokenCacheKey);
+    if (!s) return null;
+    const { token, exp } = JSON.parse(s);
+    if (!token || typeof exp !== 'number') return null;
+    if (Date.now() >= exp - 60000) return null;
+    return { token, exp };
+  } catch {
+    return null;
+  }
+};
+const saveCachedToken = (accessToken: string, expiresInSec: number) => {
+  const exp = Date.now() + expiresInSec * 1000;
+  localStorage.setItem(tokenCacheKey, JSON.stringify({ token: accessToken, exp }));
+};
+const fetchNewAccessToken = async (): Promise<string> => {
+  if (!CASPIO_ACCOUNT || !CASPIO_CLIENT_ID || !CASPIO_CLIENT_SECRET) {
+    throw new Error('Missing VITE_CASPIO_* env vars');
+  }
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: CASPIO_CLIENT_ID,
+    client_secret: CASPIO_CLIENT_SECRET
+  });
+  const r = await fetch(CASPIO_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`Caspio auth failed: ${r.status} ${t}`);
+  }
+  const json = (await r.json()) as CaspioAuth;
+  if (!json.access_token || !json.expires_in) throw new Error('Caspio auth missing access_token');
+  saveCachedToken(json.access_token, json.expires_in);
+  return json.access_token;
+};
+const ensureAccessToken = async (): Promise<string> => {
+  const cached = readCachedToken();
+  if (cached) return cached.token;
+  return fetchNewAccessToken();
+};
+
 // schema
 const REQUIRED_KEYS = [
-  'Name_of_Prospect',
-  'Address_of_Property',
-  'Zip_Code',
-  'Purchase_Price',
-  'Capital_Improvements_Amount',
-  'Building_Value',
-  'Know_Land_Value',
-  'Date_of_Purchase',
-  'SqFt_Building',
-  'Acres_Land',
-  'Year_Built',
-  'Bid_Amount_Original',
-  'Pay_Upfront',
-  'Pay_50_50_Amount',
-  'Pay_Over_Time',
-  'Rush_Fee',
-  'Multiple_Properties_Quote',
-  'First_Year_Bonus_Quote',
-  'Tax_Year',
-  'Tax_Deadline_Quote',
-  'CapEx_Date',
-  'Type_of_Property_Quote'
+  'Name_of_Prospect','Address_of_Property','Zip_Code','Purchase_Price','Capital_Improvements_Amount','Building_Value','Know_Land_Value','Date_of_Purchase','SqFt_Building','Acres_Land','Year_Built','Bid_Amount_Original','Pay_Upfront','Pay_50_50_Amount','Pay_Over_Time','Rush_Fee','Multiple_Properties_Quote','First_Year_Bonus_Quote','Tax_Year','Tax_Deadline_Quote','CapEx_Date','Type_of_Property_Quote'
 ] as const;
-
-const DECIMAL_KEYS = new Set<string>([
-  'Capital_Improvements_Amount',
-  'Bid_Amount_Original',
-  'Pay_Upfront',
-  'Pay_50_50_Amount',
-  'Pay_Over_Time',
-  'Rush_Fee',
-  'First_Year_Bonus_Quote',
-  'Acres_Land'
-]);
-
-const INTEGER_KEYS = new Set<string>([
-  'Zip_Code',
-  'Purchase_Price',
-  'Building_Value',
-  'Know_Land_Value',
-  'SqFt_Building',
-  'Year_Built',
-  'Multiple_Properties_Quote',
-  'Tax_Year'
-]);
-
-const DATE_KEYS = new Set<string>(['Date_of_Purchase', 'CapEx_Date']);
+const DECIMAL_KEYS = new Set<string>(['Capital_Improvements_Amount','Bid_Amount_Original','Pay_Upfront','Pay_50_50_Amount','Pay_Over_Time','Rush_Fee','First_Year_Bonus_Quote','Acres_Land']);
+const INTEGER_KEYS = new Set<string>(['Zip_Code','Purchase_Price','Building_Value','Know_Land_Value','SqFt_Building','Year_Built','Multiple_Properties_Quote','Tax_Year']);
+const DATE_KEYS = new Set<string>(['Date_of_Purchase','CapEx_Date']);
 
 // helpers
-const normalizeAscii = (s: string) =>
-  s
-    .normalize('NFKC')
-    .replace(/\u00A0/g, ' ')
-    .replace(/[：﹕]/g, ':')
-    .replace(/[¦︱∣│┃]/g, '|')
-    .replace(/\s+/g, ' ')
-    .trim();
-
+const normalizeAscii = (s: string) => s.normalize('NFKC').replace(/\u00A0/g,' ').replace(/[：﹕]/g,':').replace(/[¦︱∣│┃]/g,'|').replace(/\s+/g,' ').trim();
 const parseNumberStrict = (raw: string, decimals: boolean) => {
-  const cleaned = raw.replace(/[\$,]/g, '');
-  if (cleaned === '') return undefined;
-  const n = Number(cleaned);
-  if (!Number.isFinite(n)) return undefined;
+  const cleaned = raw.replace(/[\$,]/g,''); if (cleaned === '') return undefined;
+  const n = Number(cleaned); if (!Number.isFinite(n)) return undefined;
   return decimals ? Number(n.toFixed(2)) : Math.trunc(n);
 };
+const parseDateMDY = (raw: string) => { const t = raw.trim(); return /^\d{2}\/\d{2}\/\d{4}$/.test(t) ? t : undefined; };
+const sanitizeFileName = (text: string) => text.replace(/[<>:"/\\|?*]/g,'').replace(/\s+/g,' ').trim();
+const generateFileName = (data: ExtractedData) => `RCGV_${sanitizeFileName(data.Name_of_Prospect || 'Unknown')}_${sanitizeFileName(data.Address_of_Property || 'Unknown Address')}.pdf`;
 
-const parseDateMDY = (raw: string) => {
-  const t = raw.trim();
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(t)) return undefined;
-  return t;
-};
-
-const sanitizeFileName = (text: string): string =>
-  text.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, ' ').trim();
-
-const generateFileName = (data: ExtractedData): string => {
-  const name = sanitizeFileName(data.Name_of_Prospect || 'Unknown');
-  const address = sanitizeFileName(data.Address_of_Property || 'Unknown Address');
-  return `RCGV_${name}_${address}.pdf`;
-};
-
-// form fields to show (no "file")
+// UI fields (no "file")
 const TABLE_FIELDS: Array<{ key: keyof ExtractedData; label: string; readonly?: boolean }> = [
-  { key: 'Name_of_Prospect', label: 'Name_of_Prospect' },
-  { key: 'Address_of_Property', label: 'Address_of_Property' },
-  { key: 'Zip_Code', label: 'Zip_Code' },
-  { key: 'Purchase_Price', label: 'Purchase_Price' },
-  { key: 'Capital_Improvements_Amount', label: 'Capital_Improvements_Amount' },
-  { key: 'Building_Value', label: 'Building_Value' },
-  { key: 'Know_Land_Value', label: 'Know_Land_Value' },
-  { key: 'Date_of_Purchase', label: 'Date_of_Purchase' },
-  { key: 'SqFt_Building', label: 'SqFt_Building' },
-  { key: 'Acres_Land', label: 'Acres_Land' },
-  { key: 'Year_Built', label: 'Year_Built' },
-  { key: 'Bid_Amount_Original', label: 'Bid_Amount_Original' },
-  { key: 'Pay_Upfront', label: 'Pay_Upfront' },
-  { key: 'Pay_50_50_Amount', label: 'Pay_50_50_Amount' },
-  { key: 'Pay_Over_Time', label: 'Pay_Over_Time' },
-  { key: 'Rush_Fee', label: 'Rush_Fee' },
-  { key: 'Multiple_Properties_Quote', label: 'Multiple_Properties_Quote' },
-  { key: 'First_Year_Bonus_Quote', label: 'First_Year_Bonus_Quote' },
-  { key: 'Tax_Year', label: 'Tax_Year' },
-  { key: 'Tax_Deadline_Quote', label: 'Tax_Deadline_Quote' },
-  { key: 'CapEx_Date', label: 'CapEx_Date' },
-  { key: 'Type_of_Property_Quote', label: 'Type_of_Property_Quote' },
-  { key: 'Quote_pdf', label: 'Quote_pdf', readonly: true }
+  { key:'Name_of_Prospect',label:'Name_of_Prospect' },
+  { key:'Address_of_Property',label:'Address_of_Property' },
+  { key:'Zip_Code',label:'Zip_Code' },
+  { key:'Purchase_Price',label:'Purchase_Price' },
+  { key:'Capital_Improvements_Amount',label:'Capital_Improvements_Amount' },
+  { key:'Building_Value',label:'Building_Value' },
+  { key:'Know_Land_Value',label:'Know_Land_Value' },
+  { key:'Date_of_Purchase',label:'Date_of_Purchase' },
+  { key:'SqFt_Building',label:'SqFt_Building' },
+  { key:'Acres_Land',label:'Acres_Land' },
+  { key:'Year_Built',label:'Year_Built' },
+  { key:'Bid_Amount_Original',label:'Bid_Amount_Original' },
+  { key:'Pay_Upfront',label:'Pay_Upfront' },
+  { key:'Pay_50_50_Amount',label:'Pay_50_50_Amount' },
+  { key:'Pay_Over_Time',label:'Pay_Over_Time' },
+  { key:'Rush_Fee',label:'Rush_Fee' },
+  { key:'Multiple_Properties_Quote',label:'Multiple_Properties_Quote' },
+  { key:'First_Year_Bonus_Quote',label:'First_Year_Bonus_Quote' },
+  { key:'Tax_Year',label:'Tax_Year' },
+  { key:'Tax_Deadline_Quote',label:'Tax_Deadline_Quote' },
+  { key:'CapEx_Date',label:'CapEx_Date' },
+  { key:'Type_of_Property_Quote',label:'Type_of_Property_Quote' },
+  { key:'Quote_pdf',label:'Quote_pdf',readonly:true }
 ];
 
 const App: React.FC = () => {
@@ -164,83 +151,60 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // parse page 1 metadata "||Key:Value||"
   const extractDataFromPDF = async (file: File): Promise<ExtractedData> => {
     const arrayBuffer = await file.arrayBuffer();
     // @ts-ignore
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, verbosity: 0 });
     const pdf = await loadingTask.promise;
-
     const page = await pdf.getPage(1);
     const tc = await page.getTextContent();
     // @ts-ignore
     const raw = (tc.items as any[]).map(it => it.str || '').join('');
     const text = normalizeAscii(raw);
-
     const segments = text.split('||').map(s => s.trim()).filter(Boolean);
-    const kv: Record<string, string> = {};
+    const kv: Record<string,string> = {};
     for (const seg of segments) {
-      const idx = seg.indexOf(':');
-      if (idx <= 0) continue;
-      const key = seg.slice(0, idx).trim();
-      const value = seg.slice(idx + 1).trim();
-      if (!key || value === '') continue;
-      kv[key] = value;
+      const idx = seg.indexOf(':'); if (idx <= 0) continue;
+      const key = seg.slice(0, idx).trim(); const value = seg.slice(idx + 1).trim();
+      if (!key || value === '') continue; kv[key] = value;
     }
-
-    const missing: string[] = [];
-    const badFormat: string[] = [];
-    const out: ExtractedData = {};
-
+    const missing: string[] = []; const bad: string[] = []; const out: ExtractedData = {};
     for (const key of REQUIRED_KEYS) {
       const rawVal = kv[key];
-      if (rawVal == null || rawVal === '') {
-        missing.push(key);
-        continue;
-      }
-      if (INTEGER_KEYS.has(key)) {
-        const n = parseNumberStrict(rawVal, false);
-        if (n == null) badFormat.push(`${key} expects integer, got "${rawVal}"`);
-        else (out as any)[key] = n;
-        continue;
-      }
-      if (DECIMAL_KEYS.has(key)) {
-        const n = parseNumberStrict(rawVal, true);
-        if (n == null) badFormat.push(`${key} expects decimal, got "${rawVal}"`);
-        else (out as any)[key] = n;
-        continue;
-      }
-      if (DATE_KEYS.has(key)) {
-        const d = parseDateMDY(rawVal);
-        if (!d) badFormat.push(`${key} expects mm/dd/yyyy, got "${rawVal}"`);
-        else (out as any)[key] = d;
-        continue;
-      }
+      if (rawVal == null || rawVal === '') { missing.push(key); continue; }
+      if (INTEGER_KEYS.has(key)) { const n = parseNumberStrict(rawVal,false); if (n == null) bad.push(`${key} expects integer, got "${rawVal}"`); else (out as any)[key] = n; continue; }
+      if (DECIMAL_KEYS.has(key)) { const n = parseNumberStrict(rawVal,true); if (n == null) bad.push(`${key} expects decimal, got "${rawVal}"`); else (out as any)[key] = n; continue; }
+      if (DATE_KEYS.has(key)) { const d = parseDateMDY(rawVal); if (!d) bad.push(`${key} expects mm/dd/yyyy, got "${rawVal}"`); else (out as any)[key] = d; continue; }
       (out as any)[key] = rawVal;
     }
-
-    if (missing.length || badFormat.length) {
-      const msg =
+    if (missing.length || bad.length) {
+      throw new Error(
         (missing.length ? `Missing: ${missing.join(', ')}. ` : '') +
-        (badFormat.length ? `Bad format: ${badFormat.join(' | ')}.` : '');
-      throw new Error(msg.trim());
+        (bad.length ? `Bad format: ${bad.join(' | ')}.` : '')
+      );
     }
-
     return { ...out, file };
   };
 
-  // simple submit that strips file; replace later with OAuth flow if needed
   const submitToCaspio = async (data: ExtractedData): Promise<void> => {
-    const token = import.meta.env.VITE_CASPIO_ACCESS_TOKEN; // temporary
-    const apiUrl = import.meta.env.VITE_CASPIO_API_URL;     // temporary
-    if (!token || !apiUrl) throw new Error('Missing Caspio configuration');
+    const tableName = 'A_Quote_Webapp_tbl';
+    const url = `${CASPIO_REST_BASE}/tables/${encodeURIComponent(tableName)}/records`;
     const { file, ...record } = data;
     const payload = Object.fromEntries(Object.entries(record).filter(([, v]) => v !== undefined));
-    const res = await fetch(apiUrl, {
+    let token = await ensureAccessToken();
+    let res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload)
     });
+    if (res.status === 401) {
+      token = await fetchNewAccessToken();
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`Caspio submission failed: ${res.status} ${text}`);
@@ -264,8 +228,7 @@ const App: React.FC = () => {
 
   const handleSubmitToCaspio = async () => {
     if (!extractedData || !userData || !selectedFile) {
-      toast.error('Please upload PDF and fill in all required fields');
-      return;
+      toast.error('Please upload PDF and fill in all required fields'); return;
     }
     setIsLoading(true);
     try {
@@ -276,13 +239,11 @@ const App: React.FC = () => {
         Contact_Name_Last: userData.lastName.trim(),
         Contact_Phone: userData.smsPhone?.trim() || '',
         Email_from_App: userData.Email_from_App.trim().toLowerCase(),
-        Quote_pdf: `/${fileName}` // reference only; actual upload handled elsewhere if desired
+        Quote_pdf: `/${fileName}`
       };
       await submitToCaspio(submissionData);
       toast.success('Data successfully submitted to Caspio!');
-      setExtractedData(null);
-      setUserData(null);
-      setSelectedFile(null);
+      setExtractedData(null); setUserData(null); setSelectedFile(null);
     } catch (error) {
       toast.error(`Failed to submit: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
@@ -296,10 +257,7 @@ const App: React.FC = () => {
   };
 
   const DataDisplay: React.FC<{ data: ExtractedData }> = ({ data }) => {
-    const formatValue = (value: any): string => {
-      if (value === null || value === undefined) return '';
-      return typeof value === 'number' ? String(value) : String(value);
-    };
+    const formatValue = (value: any) => value == null ? '' : String(value);
     return (
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Extracted Data</h3>
@@ -330,31 +288,23 @@ const App: React.FC = () => {
         </div>
         <div className="max-w-4xl mx-auto space-y-6">
           {!extractedData ? (
-            <Card>
-              <CardContent className="p-6">
-                <FileUpload onFileSelect={handleFileUploadAndUserData} isLoading={isLoading} />
-              </CardContent>
-            </Card>
+            <Card><CardContent className="p-6">
+              <FileUpload onFileSelect={handleFileUploadAndUserData} isLoading={isLoading} />
+            </CardContent></Card>
           ) : (
-            <Card>
-              <CardContent className="p-6">
-                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h3 className="font-medium text-blue-800 mb-2">File Information</h3>
-                  <p className="text-sm text-blue-700"><strong>Original:</strong> {selectedFile?.name}</p>
-                  <p className="text-sm text-blue-700"><strong>Caspio filename:</strong> {generateFileName(extractedData)}</p>
-                </div>
-                <DataDisplay data={extractedData} />
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={handleSubmitToCaspio}
-                    disabled={isLoading}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                  >
-                    {isLoading ? 'Submitting...' : 'Submit to Caspio'}
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
+            <Card><CardContent className="p-6">
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h3 className="font-medium text-blue-800 mb-2">File Information</h3>
+                <p className="text-sm text-blue-700"><strong>Original:</strong> {selectedFile?.name}</p>
+                <p className="text-sm text-blue-700"><strong>Caspio filename:</strong> {generateFileName(extractedData)}</p>
+              </div>
+              <DataDisplay data={extractedData} />
+              <div className="mt-6 flex justify-end">
+                <button onClick={handleSubmitToCaspio} disabled={isLoading} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                  {isLoading ? 'Submitting...' : 'Submit to Caspio'}
+                </button>
+              </div>
+            </CardContent></Card>
           )}
         </div>
       </div>
