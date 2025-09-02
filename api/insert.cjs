@@ -1,5 +1,3 @@
-exports.config = { runtime: 'nodejs' };
-
 const HEADERS = [
   'Name_of_Prospect','Address_of_Property','Zip_Code','Purchase_Price','Capital_Improvements_Amount',
   'Building_Value','Know_Land_Value','Date_of_Purchase','SqFt_Building','Acres_Land','Year_Built',
@@ -56,7 +54,7 @@ module.exports = async function handler(req, res) {
       out.header = (headerResp.data.values && headerResp.data.values[0]) || [];
     } catch (e) {
       out.sheetStatus = 'error';
-      out.sheetError = String(e && e.message || e);
+      out.sheetError = String((e && e.message) || e);
     }
     return res.status(200).json(out);
   }
@@ -65,8 +63,8 @@ module.exports = async function handler(req, res) {
   if (!spreadsheetId) return res.status(500).json({ error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
 
   let body;
-  try { body = await readJsonBody(req); } 
-  catch (e) { return res.status(400).json({ error: 'Unable to read JSON body', message: String(e && e.message || e) }); }
+  try { body = await readJsonBody(req); }
+  catch (e) { return res.status(400).json({ error: 'Unable to read JSON body', message: String((e && e.message) || e) }); }
 
   const record = body && body.record;
   if (!record || typeof record !== 'object') return res.status(400).json({ error: 'Bad Request', hint: 'POST JSON with { "record": { ... } }' });
@@ -98,6 +96,7 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({ ok: true, updatedRange: append.data.updates && append.data.updates.updatedRange, updatedRows: append.data.updates && append.data.updates.updatedRows });
   } catch (e) {
-    return res.status(500).json({ error: 'Unhandled server error', message: String(e && e.message || e) });
+    return res.status(500).json({ error: 'Unhandled server error', message: String((e && e.message) || e) });
   }
 };
+module.exports.config = { runtime: 'nodejs' };
