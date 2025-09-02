@@ -8,7 +8,7 @@ const HEADERS = [
 
 function send(res, code, body) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,HEAD');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS,HEAD');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.status(code).json(body);
 }
@@ -64,7 +64,9 @@ module.exports = async function handler(req, res) {
     return send(res, 200, out);
   }
 
-  if (req.method !== 'POST') return send(res, 405, { error: 'Method Not Allowed' });
+  if (req.method !== 'POST' && req.method !== 'PUT') {
+    return send(res, 405, { error: 'Method Not Allowed', method: req.method });
+  }
   if (!spreadsheetId) return send(res, 500, { error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
 
   let body;
@@ -72,7 +74,9 @@ module.exports = async function handler(req, res) {
   catch (e) { return send(res, 400, { error: 'Unable to read JSON body', message: String((e && e.message) || e) }); }
 
   const record = body && body.record;
-  if (!record || typeof record !== 'object') return send(res, 400, { error: 'Bad Request', hint: 'POST JSON with { "record": { ... } }' });
+  if (!record || typeof record !== 'object') {
+    return send(res, 400, { error: 'Bad Request', hint: 'POST JSON with { "record": { ... } }' });
+  }
 
   try {
     const sheets = await getSheets();
@@ -95,4 +99,17 @@ module.exports = async function handler(req, res) {
     const row = HEADERS.map(k => record[k] == null ? '' : record[k]);
     const append = await sheets.spreadsheets.values.append({
       spreadsheetId, range: `${sheetName}!A1`,
-      valueInputOption: 'USER_EN_
+      valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [row] }
+    });
+
+    return send(res, 200, {
+      ok: true,
+      updatedRange: append.data.updates && append.data.updates.updatedRange,
+      updatedRows: append.data.updates && append.data.updates.updatedRows
+    });
+  } catch (e) {
+    return send(res, 500, { error: 'Unhandled server error', message: String((e && e.message) || e) });
+  }
+};
+module.exports.config = { runtime: 'nodejs' };
