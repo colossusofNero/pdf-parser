@@ -6,6 +6,13 @@ const HEADERS = [
   'Contact_Name_First','Contact_Name_Last','Contact_Phone','Email_from_App','Quote_pdf'
 ];
 
+function send(res, code, body) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,HEAD');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.status(code).json(body);
+}
+
 async function readJsonBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
   const chunks = [];
@@ -16,11 +23,8 @@ async function readJsonBody(req) {
 
 async function getSheets() {
   let google;
-  try {
-    ({ google } = await import('googleapis'));
-  } catch {
-    throw new Error('googleapis module not found. Add "googleapis" to dependencies and redeploy.');
-  }
+  try { ({ google } = await import('googleapis')); }
+  catch { throw new Error('googleapis module not found. Add "googleapis" to dependencies and redeploy.'); }
   const email = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
   const keyRaw = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').trim().replace(/^"|"$/g, '');
   const privateKey = keyRaw.replace(/\\n/g, '\n');
@@ -34,6 +38,7 @@ module.exports = async function handler(req, res) {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '';
   const sheetName = process.env.GOOGLE_SHEETS_SHEET_NAME || 'Sheet1';
 
+  if (req.method === 'OPTIONS' || req.method === 'HEAD') return send(res, 204, {});
   if (req.method === 'GET') {
     const out = {
       ok: true,
@@ -56,18 +61,18 @@ module.exports = async function handler(req, res) {
       out.sheetStatus = 'error';
       out.sheetError = String((e && e.message) || e);
     }
-    return res.status(200).json(out);
+    return send(res, 200, out);
   }
 
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed', hint: 'Use POST or GET' });
-  if (!spreadsheetId) return res.status(500).json({ error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
+  if (req.method !== 'POST') return send(res, 405, { error: 'Method Not Allowed' });
+  if (!spreadsheetId) return send(res, 500, { error: 'Missing GOOGLE_SHEETS_SPREADSHEET_ID' });
 
   let body;
   try { body = await readJsonBody(req); }
-  catch (e) { return res.status(400).json({ error: 'Unable to read JSON body', message: String((e && e.message) || e) }); }
+  catch (e) { return send(res, 400, { error: 'Unable to read JSON body', message: String((e && e.message) || e) }); }
 
   const record = body && body.record;
-  if (!record || typeof record !== 'object') return res.status(400).json({ error: 'Bad Request', hint: 'POST JSON with { "record": { ... } }' });
+  if (!record || typeof record !== 'object') return send(res, 400, { error: 'Bad Request', hint: 'POST JSON with { "record": { ... } }' });
 
   try {
     const sheets = await getSheets();
@@ -83,20 +88,11 @@ module.exports = async function handler(req, res) {
       const missing = HEADERS.filter(h => !headerRow.includes(h));
       const extra = headerRow.filter(h => !HEADERS.includes(h));
       if (missing.length || extra.length) {
-        return res.status(422).json({ error: 'Header mismatch', missing, extra, expected: HEADERS, got: headerRow });
+        return send(res, 422, { error: 'Header mismatch', missing, extra, expected: HEADERS, got: headerRow });
       }
     }
 
     const row = HEADERS.map(k => record[k] == null ? '' : record[k]);
     const append = await sheets.spreadsheets.values.append({
       spreadsheetId, range: `${sheetName}!A1`,
-      valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: [row] }
-    });
-
-    return res.status(200).json({ ok: true, updatedRange: append.data.updates && append.data.updates.updatedRange, updatedRows: append.data.updates && append.data.updates.updatedRows });
-  } catch (e) {
-    return res.status(500).json({ error: 'Unhandled server error', message: String((e && e.message) || e) });
-  }
-};
-module.exports.config = { runtime: 'nodejs' };
+      valueInputOption: 'USER_EN_
