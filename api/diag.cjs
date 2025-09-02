@@ -1,11 +1,10 @@
-exports.config = { runtime: 'nodejs' };
 module.exports = async (_req, res) => {
   const out = { ok: true, node: process.version };
   try {
     await import('googleapis');
     out.googleapis = 'ok';
   } catch (e) {
-    out.googleapis = `missing: ${String(e && e.message || e)}`;
+    out.googleapis = `missing: ${String((e && e.message) || e)}`;
   }
   out.env = {
     GOOGLE_SERVICE_ACCOUNT_EMAIL: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -15,3 +14,4 @@ module.exports = async (_req, res) => {
   };
   res.status(200).json(out);
 };
+module.exports.config = { runtime: 'nodejs' };
