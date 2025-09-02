@@ -1,5 +1,5 @@
-
-export const config = { runtime: 'nodejs' };
-export default async function handler(_req: any, res: any) {
-  return res.status(200).json({ ok: true, node: process.version });
-}
+// CommonJS, zero deps, cannot crash on import
+exports.config = { runtime: 'nodejs' };
+module.exports = (_req, res) => {
+  res.status(200).json({ ok: true, node: process.version, now: Date.now() });
+};
