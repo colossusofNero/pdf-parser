@@ -1,0 +1,46 @@
+/* src/index.css — Tailwind-friendly base */
+
+:root {
+  /* keep system font stack, let Tailwind handle sizing/colors */
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* remove centering so our grid can fill the page */
+  background: #f8fafc; /* Tailwind slate-50-ish */
+  color: #0f172a;      /* Tailwind slate-900-ish */
+}
+
+/* Unstyled anchor; Tailwind classes will style links */
+a { color: inherit; text-decoration: none; }
+
+/* Buttons: let Tailwind classes drive appearance; keep only cursor */
+button { cursor: pointer; }
+
+/* Small helper for inputs when we don’t want to stack many classes */
+.field {
+  width: 100%;
+  border: 1px solid rgb(203 213 225); /* slate-300 */
+  border-radius: 0.75rem;             /* rounded-xl */
+  padding: 0.5rem 0.75rem;            /* px-3 py-2 */
+  outline: none;
+}
+.field:focus {
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35); /* sky-400 ring-ish */
+  border-color: rgb(56 189 248);
+}
+
+/* Utility: subtle card shadow if needed without Tailwind */
+.card {
+  background: #fff;
+  border-radius: 1rem;
+  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.06);
+}

@@ -1,0 +1,24 @@
+@'
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Node / Vite
+node_modules/
+dist/
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Local config / secrets
+*.env
+.env.*
+# Excel cache or big local artifacts (optional)
+*.xlsx
+'@ | Out-File -Encoding utf8 .gitignore
