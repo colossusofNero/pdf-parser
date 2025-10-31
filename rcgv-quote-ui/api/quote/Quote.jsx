@@ -1,4 +1,4 @@
-// static: inside a React component file (e.g., src/pages/Quote.jsx)
+﻿// static: inside a React component file (e.g., src/pages/Quote.jsx)
 import { useState } from "react";                            // static
 import { computeQuote } from "../api/quote";                 // static
 

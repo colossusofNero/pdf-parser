@@ -1,7 +1,7 @@
-// src/components/QuoteForm.jsx
+﻿// src/components/QuoteForm.jsx
 import { useEffect, useState } from "react";
 
-const apiBase = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8080";
+const apiBase = import.meta.env.VITE_API_BASE || "";
 const OVERRIDE_PASS = import.meta.env.VITE_OVERRIDE_PASS || "";
 
 /** One-click example for learning (ALL FIELDS) */
@@ -64,7 +64,7 @@ export default function QuoteForm() {
     return n > 1 ? n / 100 : n;
   };
   const money = (n) =>
-    isFinite(n) ? n.toLocaleString(undefined, { style: "currency", currency: "USD" }) : "—";
+    isFinite(n) ? n.toLocaleString(undefined, { style: "currency", currency: "USD" }) : "â€”";
 
   function fillExample() {
     setForm(EXAMPLE);
@@ -173,7 +173,7 @@ export default function QuoteForm() {
           Use Example Data
         </button>
         <button type="submit" className="px-5 py-2 rounded-xl bg-sky-600 text-white disabled:opacity-50" disabled={busy}>
-          {busy ? "Computing…" : "Compute Quote"}
+          {busy ? "Computingâ€¦" : "Compute Quote"}
         </button>
       </div>
 
@@ -233,7 +233,7 @@ export default function QuoteForm() {
           </Field>
           <Field label="Land Value input">
             <div className="flex gap-2">
-              <TabBtn active={form.land_mode === "percent"} onClick={() => set("land_mode", "percent")}>Percent (0–100)</TabBtn>
+              <TabBtn active={form.land_mode === "percent"} onClick={() => set("land_mode", "percent")}>Percent (0â€“100)</TabBtn>
               <TabBtn active={form.land_mode === "dollars"} onClick={() => set("land_mode", "dollars")}>Dollars ($)</TabBtn>
             </div>
           </Field>
@@ -247,7 +247,7 @@ export default function QuoteForm() {
               <option>2W $1000</option>
             </select>
           </Field>
-          <Field label="Price Override ($) — requires password">
+          <Field label="Price Override ($) â€” requires password">
             <input className="field" value={form.price_override || ""} onChange={(e) => set("price_override", e.target.value)} placeholder="(optional)" aria-label="Price Override" />
           </Field>
         </Grid>

@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8080";
+﻿const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 export async function chat(messages) {
   const r = await fetch(`${API_BASE}/agent/chat`, {

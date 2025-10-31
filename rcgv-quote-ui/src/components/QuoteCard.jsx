@@ -1,4 +1,4 @@
-// src/components/QuoteCard.jsx
+﻿// src/components/QuoteCard.jsx
 import React from "react";
 
 export default function QuoteCard({ last, onQuickAction }) {
@@ -36,8 +36,8 @@ export default function QuoteCard({ last, onQuickAction }) {
         <Chip onClick={() => onQuickAction("Set rush to 4W $500.")}>4W Rush</Chip>
         <Chip onClick={() => onQuickAction("Set rush to 2W $1000.")}>2W Rush</Chip>
         <Chip onClick={() => onQuickAction("Set rush to No Rush.")}>No Rush</Chip>
-        <Chip onClick={() => onQuickAction("Mark premium as Yes.")}>Premium ✓</Chip>
-        <Chip onClick={() => onQuickAction("Mark premium as No.")}>Premium ✕</Chip>
+        <Chip onClick={() => onQuickAction("Mark premium as Yes.")}>Premium âœ“</Chip>
+        <Chip onClick={() => onQuickAction("Mark premium as No.")}>Premium âœ•</Chip>
         <Chip onClick={() => onQuickAction("Apply referral 10%.")}>Referral 10%</Chip>
         <Chip onClick={() => onQuickAction("Remove referral.")}>Referral 0%</Chip>
       </div>
@@ -52,10 +52,10 @@ function Stat({ label, value }) {
   return (
     <div className="rounded-xl border p-3">
       <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-lg font-semibold">{value ?? "—"}</div>
+      <div className="text-lg font-semibold">{value ?? "â€”"}</div>
     </div>
   );
 }
-function money(n){ return n==null||isNaN(n) ? "—" : n.toLocaleString(undefined,{style:"currency",currency:"USD"}); }
-function pct(n){ return n==null||isNaN(n) ? "—" : `${(n*100).toFixed(1)}%`; }
-function num(n){ return n==null||isNaN(n) ? "—" : Number(n.toFixed(3)); }
+function money(n){ return n==null||isNaN(n) ? "â€”" : n.toLocaleString(undefined,{style:"currency",currency:"USD"}); }
+function pct(n){ return n==null||isNaN(n) ? "â€”" : `${(n*100).toFixed(1)}%`; }
+function num(n){ return n==null||isNaN(n) ? "â€”" : Number(n.toFixed(3)); }

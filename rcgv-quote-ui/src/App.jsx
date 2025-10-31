@@ -1,8 +1,8 @@
-// src/App.jsx
+﻿// src/App.jsx
 import { useState, useEffect } from "react";
 import QuoteForm from "./components/QuoteForm.jsx";
 
-const apiBase = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8080";
+const apiBase = import.meta.env.VITE_API_BASE || "";
 
 export default function App() {
   const [tab, setTab] = useState("assistant"); // "assistant" | "form"
