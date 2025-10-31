@@ -1,9 +1,43 @@
-﻿export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+// api/quote/set_inputs.js
+export default async function handler(req, res) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   try {
-    const payload = req.body; // TODO: persist/use inputs as needed
-    return res.status(200).json({ ok: true, action: "set_inputs", payload });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e?.message || "error" });
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+    
+    const response = await fetch(`${backendUrl}/quote/set_inputs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Backend error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return res.status(200).json(data);
+    
+  } catch (error) {
+    console.error("Set inputs error:", error);
+    return res.status(500).json({ 
+      ok: false, 
+      error: error.message || "Internal server error" 
+    });
   }
 }
