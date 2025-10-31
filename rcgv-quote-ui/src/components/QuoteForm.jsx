@@ -64,7 +64,7 @@ export default function QuoteForm() {
     return n > 1 ? n / 100 : n;
   };
   const money = (n) =>
-    isFinite(n) ? n.toLocaleString(undefined, { style: "currency", currency: "USD" }) : "â€”";
+    isFinite(n) ? n.toLocaleString(undefined, { style: "currency", currency: "USD" }) : "—";
 
   function fillExample() {
     setForm(EXAMPLE);
@@ -166,6 +166,373 @@ export default function QuoteForm() {
     }
   }
 
+  // PDF Display Component
+  const PDFDisplay = ({ quoteData, formData }) => {
+    if (!quoteData) return null;
+
+    const formatMoney = (n) => {
+      return n == null || isNaN(n) 
+        ? "$0.00" 
+        : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+    };
+
+    const formatNumber = (n) => {
+      return n == null || isNaN(n) ? "0" : Number(n).toLocaleString();
+    };
+
+    // Calculate seasonal discount
+    const getSeasonalDiscount = () => {
+      const today = new Date();
+      const month = today.getMonth() + 1; // 1-12
+      const day = today.getDate();
+      
+      // 10% discount periods: Oct 15 - Nov 15, Apr 15 - May 15
+      if ((month === 10 && day >= 15) || (month === 11 && day <= 15) ||
+          (month === 4 && day >= 15) || (month === 5 && day <= 15)) {
+        return { rate: 0.10, label: "10% Seasonal Discount!" };
+      }
+      
+      // 5% discount periods: Nov 16 - Dec 15, May 16 - Jun 15
+      if ((month === 11 && day >= 16) || (month === 12 && day <= 15) ||
+          (month === 5 && day >= 16) || (month === 6 && day <= 15)) {
+        return { rate: 0.05, label: "5% Seasonal Discount!" };
+      }
+      
+      return { rate: 0, label: null };
+    };
+
+    const seasonalDiscount = getSeasonalDiscount();
+    const quoteDate = new Date();
+    const expirationDate = new Date(quoteDate);
+    expirationDate.setDate(expirationDate.getDate() + 30);
+
+    const purchasePrice = toNumber(formData.purchase_price);
+    const landValue = formData.land_mode === 'percent' 
+      ? purchasePrice * (parseFloat(formData.land_value || 0) / 100)
+      : toNumber(formData.land_value);
+    const buildingValue = purchasePrice - landValue;
+    const parts = quoteData.parts || {};
+    const baseQuote = quoteData.base_quote || quoteData.final_quote || 0;
+    
+    // Apply seasonal discount to all payment options
+    const discountMultiplier = 1 - seasonalDiscount.rate;
+    const payUpfront = baseQuote * 0.91 * discountMultiplier;
+    const pay5050 = (baseQuote / 2) * discountMultiplier;
+    const payOverTime = (baseQuote / 4) * discountMultiplier;
+    const originalWithSeasonal = baseQuote * discountMultiplier;
+
+    // Sample depreciation schedule (replace with actual data from backend when available)
+    const fullSchedule = [
+      {year: 2025, cost_seg_est: 66073, std_dep: 113694, trad_cost_seg: 113694, bonus_dep: 569423},
+      {year: 2026, cost_seg_est: 83446, std_dep: 177172, trad_cost_seg: 177172, bonus_dep: 102805},
+      {year: 2027, cost_seg_est: 83446, std_dep: 145582, trad_cost_seg: 145582, bonus_dep: 90169},
+      {year: 2028, cost_seg_est: 83446, std_dep: 124860, trad_cost_seg: 124860, bonus_dep: 81881},
+      {year: 2029, cost_seg_est: 83446, std_dep: 120001, trad_cost_seg: 120001, bonus_dep: 79937},
+      {year: 2030, cost_seg_est: 83446, std_dep: 104065, trad_cost_seg: 104065, bonus_dep: 73563},
+      {year: 2031, cost_seg_est: 83446, std_dep: 90465, trad_cost_seg: 90465, bonus_dep: 68122},
+      {year: 2032, cost_seg_est: 83446, std_dep: 90465, trad_cost_seg: 90465, bonus_dep: 68122},
+      {year: 2033, cost_seg_est: 83446, std_dep: 90528, trad_cost_seg: 90528, bonus_dep: 68148},
+      {year: 2034, cost_seg_est: 83469, std_dep: 90479, trad_cost_seg: 90479, bonus_dep: 68137},
+      {year: 2035, cost_seg_est: 83446, std_dep: 90528, trad_cost_seg: 90528, bonus_dep: 68148},
+      {year: 2036, cost_seg_est: 83469, std_dep: 90479, trad_cost_seg: 90479, bonus_dep: 68137},
+      {year: 2037, cost_seg_est: 83446, std_dep: 90528, trad_cost_seg: 90528, bonus_dep: 68148},
+      {year: 2038, cost_seg_est: 83469, std_dep: 90479, trad_cost_seg: 90479, bonus_dep: 68137},
+      {year: 2039, cost_seg_est: 83446, std_dep: 90528, trad_cost_seg: 90528, bonus_dep: 68148},
+      {year: 2040, cost_seg_est: 83469, std_dep: 71861, trad_cost_seg: 71861, bonus_dep: 60690},
+      {year: 2041, cost_seg_est: 83446, std_dep: 53228, trad_cost_seg: 53228, bonus_dep: 53228},
+      {year: 2042, cost_seg_est: 83469, std_dep: 53242, trad_cost_seg: 53242, bonus_dep: 53242},
+      {year: 2043, cost_seg_est: 83446, std_dep: 53228, trad_cost_seg: 53228, bonus_dep: 53228},
+      {year: 2044, cost_seg_est: 83469, std_dep: 53242, trad_cost_seg: 53242, bonus_dep: 53242},
+      {year: 2045, cost_seg_est: 83446, std_dep: 53228, trad_cost_seg: 53228, bonus_dep: 53228},
+      {year: 2046, cost_seg_est: 83469, std_dep: 53242, trad_cost_seg: 53242, bonus_dep: 53242},
+      {year: 2047, cost_seg_est: 83446, std_dep: 53228, trad_cost_seg: 53228, bonus_dep: 53228},
+      {year: 2048, cost_seg_est: 83469, std_dep: 53242, trad_cost_seg: 53242, bonus_dep: 53242},
+      {year: 2049, cost_seg_est: 83446, std_dep: 53228, trad_cost_seg: 53228, bonus_dep: 53228},
+      {year: 2050, cost_seg_est: 83469, std_dep: 53242, trad_cost_seg: 53242, bonus_dep: 53242},
+      {year: 2051, cost_seg_est: 83446, std_dep: 53228, trad_cost_seg: 53228, bonus_dep: 53228},
+      {year: 2052, cost_seg_est: 59119, std_dep: 37710, trad_cost_seg: 37710, bonus_dep: 37710}
+    ];
+
+    // Calculate totals
+    const totals = {
+      cost_seg_est: fullSchedule.reduce((sum, row) => sum + row.cost_seg_est, 0),
+      std_dep: fullSchedule.reduce((sum, row) => sum + row.std_dep, 0),
+      trad_cost_seg: fullSchedule.reduce((sum, row) => sum + row.trad_cost_seg, 0),
+      bonus_dep: fullSchedule.reduce((sum, row) => sum + row.bonus_dep, 0)
+    };
+
+    return (
+      <div className="w-full max-w-5xl mx-auto bg-white shadow-2xl rounded-lg overflow-hidden my-8">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-900 to-blue-700 text-white p-8 relative">
+          {seasonalDiscount.label && (
+            <div className="absolute top-4 right-4 bg-yellow-400 text-gray-900 px-4 py-2 rounded-full font-bold text-sm animate-pulse shadow-lg">
+              🎉 {seasonalDiscount.label}
+            </div>
+          )}
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 bg-white rounded-lg flex items-center justify-center shadow-lg">
+              <div className="text-blue-900 font-bold text-3xl">RCG</div>
+            </div>
+            <div>
+              <h1 className="text-4xl font-bold">Cost Segregation Quote</h1>
+              <p className="text-blue-200 text-lg tracking-wide">VALUATION</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Quote Date and Expiration Banner */}
+        <div className="bg-yellow-50 border-b-2 border-yellow-300 px-8 py-3 flex justify-between items-center">
+          <div>
+            <span className="font-semibold text-gray-700">Quote Date:</span>
+            <span className="ml-2 text-gray-900">{quoteDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+          <div className="bg-red-100 border border-red-300 px-4 py-1 rounded-full">
+            <span className="font-semibold text-red-700">Valid Until:</span>
+            <span className="ml-2 text-red-900 font-bold">{expirationDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="p-8">
+          {/* Company Info */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div>
+              <h2 className="text-lg font-semibold mb-3 text-blue-900">Company:</h2>
+              <p className="text-gray-700 mb-4">{formData.owner || formData.name || 'Valued Client'}</p>
+              
+              <h2 className="text-lg font-semibold mb-3 text-blue-900">
+                {formData.property_type || 'Multi-Family'} Property - Address:
+              </h2>
+              <p className="text-gray-700">{formData.address || '123 Main St, Yourtown, US, ' + (formData.zip_code || '00000')}</p>
+            </div>
+            
+            <div className="bg-gray-50 p-6 rounded-lg space-y-3 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold">Purchase Price</span>
+                <p className="text-2xl font-bold text-blue-900">{formatMoney(purchasePrice)}</p>
+              </div>
+              <hr/>
+              <div className="flex justify-between">
+                <span className="font-semibold">Capital Improvements</span>
+                <p>{formatMoney(formData.capex === 'Yes' ? toNumber(formData.capex_amount) : 0)}</p>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">Building (plus CapEx)</span>
+                <p className="text-xl font-bold text-green-700">{formatMoney(buildingValue)}</p>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">Land</span>
+                <p>{formatMoney(landValue)}</p>
+              </div>
+              <hr/>
+              <div className="flex justify-between">
+                <span className="font-semibold">Purchase Date</span>
+                <p>{formData.purchase_date}</p>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">SqFt Building</span>
+                <p>{formatNumber(formData.sqft_building)}</p>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">Acres Land</span>
+                <p>{formData.acres_land}</p>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">Due Date</span>
+                <p>{formData.tax_deadline} {formData.tax_year}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Contact Info */}
+          <div className="bg-blue-50 border border-blue-200 p-6 rounded-lg mb-8">
+            <h3 className="font-semibold mb-3 text-blue-900">RCG Contact:</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="font-semibold">Scott Roelofs</p>
+                <p>O: 331.248.7245  C: 480.276.5626</p>
+                <p className="text-blue-600">info@rcgvaluation.com</p>
+                <p className="text-blue-600">rcgvaluation.com</p>
+              </div>
+              <div>
+                <p className="text-gray-600">6929 N Hayden Rd Suite C4-494</p>
+                <p className="text-gray-600">Scottsdale, AZ 85250</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Engagement Fee */}
+          <div className="bg-gradient-to-br from-blue-50 to-white border-4 border-blue-900 rounded-xl p-8 mb-8 shadow-lg">
+            <h2 className="text-3xl font-bold text-blue-900 mb-6 text-center">Engagement Fee</h2>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white border-2 border-blue-900 p-6 rounded-lg text-center shadow-md">
+                <div className="text-sm text-gray-600 mb-2">Originally Quoted</div>
+                {seasonalDiscount.rate > 0 && (
+                  <div className="text-2xl font-bold text-gray-400 line-through mb-1">{formatMoney(baseQuote)}</div>
+                )}
+                <div className="text-5xl font-bold text-blue-900 mb-2">{formatMoney(originalWithSeasonal)}</div>
+                {seasonalDiscount.rate > 0 && (
+                  <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-bold inline-block">
+                    {(seasonalDiscount.rate * 100).toFixed(0)}% Seasonal Savings!
+                  </div>
+                )}
+                <div className="text-xs text-gray-500 mt-2">Rush Fee: {formatMoney(parts.rush_fee || 0)}</div>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-lg shadow-md transform hover:scale-105 transition">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="font-bold">Pay Upfront**</div>
+                    <div className="bg-yellow-400 text-green-900 text-xs font-bold px-2 py-1 rounded">
+                      Save {seasonalDiscount.rate > 0 ? (9 + seasonalDiscount.rate * 100).toFixed(0) : '9'}%!
+                    </div>
+                  </div>
+                  <div className="text-3xl font-bold">{formatMoney(payUpfront)}</div>
+                </div>
+                
+                <div className="bg-white border-2 border-gray-300 p-4 rounded-lg shadow-sm">
+                  <div className="font-semibold mb-1">Pay 50/50</div>
+                  <div className="text-2xl font-bold text-gray-800">{formatMoney(pay5050)}</div>
+                  <div className="text-xs text-gray-500">50% upfront, 50% on delivery</div>
+                </div>
+                
+                <div className="bg-white border-2 border-gray-300 p-4 rounded-lg shadow-sm">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="font-semibold">Pay Over Time</div>
+                    <div className="text-blue-600 font-bold text-lg">affirm</div>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-800">{formatMoney(payOverTime)}</div>
+                  <div className="text-xs text-gray-500">(Up to 36 months)</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-6 bg-yellow-50 border border-yellow-200 p-4 rounded-lg text-xs text-gray-700">
+              ** The Upfront payment needs to be paid within 15 days of execution of the engagement letter or the Engagement Fee will revert to the "Originally Quoted" value.
+            </div>
+          </div>
+
+          {/* Full Depreciation Schedule */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-2 text-blue-900">What you have vs. What we offer</h2>
+            <p className="text-sm text-gray-600 mb-4 italic">
+              Notice: All columns total to the same amount ({formatMoney(buildingValue)}). 
+              We don't create depreciation—we accelerate it to year one for maximum tax benefit.
+            </p>
+            <div className="overflow-x-auto rounded-lg shadow max-h-96 overflow-y-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead className="bg-blue-900 text-white sticky top-0 z-10">
+                  <tr>
+                    <th className="border border-blue-800 p-2 text-left">Year</th>
+                    <th className="border border-blue-800 p-2 text-right">Cost Seg Est</th>
+                    <th className="border border-blue-800 p-2 text-right">Std. Dep</th>
+                    <th className="border border-blue-800 p-2 text-right">Trad. Cost Seg</th>
+                    <th className="border border-blue-800 p-2 text-right bg-green-800">Bonus Dep ⭐</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {fullSchedule.map((row, idx) => (
+                    <tr key={row.year} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                      <td className="border p-2 font-semibold">{row.year}</td>
+                      <td className="border p-2 text-right">{formatMoney(row.cost_seg_est)}</td>
+                      <td className="border p-2 text-right">{formatMoney(row.std_dep)}</td>
+                      <td className="border p-2 text-right">{formatMoney(row.trad_cost_seg)}</td>
+                      <td className="border p-2 text-right font-bold text-green-700 bg-green-50">
+                        {formatMoney(row.bonus_dep)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-blue-100 font-bold sticky bottom-0">
+                  <tr>
+                    <td className="border border-blue-900 p-3 text-lg">Total</td>
+                    <td className="border border-blue-900 p-3 text-right text-lg">{formatMoney(totals.cost_seg_est)}</td>
+                    <td className="border border-blue-900 p-3 text-right text-lg">{formatMoney(totals.std_dep)}</td>
+                    <td className="border border-blue-900 p-3 text-right text-lg">{formatMoney(totals.trad_cost_seg)}</td>
+                    <td className="border border-blue-900 p-3 text-right text-lg bg-green-200 font-bold">{formatMoney(totals.bonus_dep)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-xs text-gray-600 mt-3 italic">
+              *Full depreciation schedule with all {fullSchedule.length} years shown. 
+              Totals prove we depreciate the exact same amount—just faster for you.
+            </p>
+          </div>
+
+          {/* Breakdown */}
+          <div className="bg-gray-50 border p-6 rounded-lg mb-8">
+            <h2 className="text-xl font-bold mb-4 text-blue-900">Quote Breakdown</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-gray-600">Base Rate:</span>
+                <span className="font-bold">{formatMoney(parts.base_rate)}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-gray-600">Cost Basis:</span>
+                <span className="font-bold">{formatMoney(parts.cost_basis)}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-gray-600">CB Factor:</span>
+                <span className="font-bold">{parts.cb_factor?.toFixed(3) || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-gray-600">ZIP Factor:</span>
+                <span className="font-bold">{parts.zip_factor?.toFixed(3) || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-gray-600">Rush Fee:</span>
+                <span className="font-bold">{formatMoney(parts.rush_fee)}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-gray-600">Premium:</span>
+                <span className="font-bold">{((parts.premium_uplift_pct || 0) * 100).toFixed(1)}%</span>
+              </div>
+              {seasonalDiscount.rate > 0 && (
+                <div className="flex justify-between border-b pb-2 col-span-2 md:col-span-3">
+                  <span className="text-yellow-700 font-semibold">Seasonal Discount:</span>
+                  <span className="font-bold text-yellow-700">-{(seasonalDiscount.rate * 100).toFixed(0)}%</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Property Type Badge */}
+          <div className="text-center mb-6">
+            <div className="inline-block bg-blue-900 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg">
+              {formData.property_type || 'Multi-Family'}
+            </div>
+            {formData.floors && (
+              <div className="inline-block ml-4 bg-gray-700 text-white px-6 py-3 rounded-full font-semibold">
+                {formData.floors} {formData.floors === 1 ? 'Floor' : 'Floors'}
+              </div>
+            )}
+          </div>
+
+          {/* Print Button */}
+          <div className="text-center">
+            <button
+              onClick={() => window.print()}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition"
+            >
+              Print or Save as PDF
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-gray-100 border-t-2 border-gray-300 p-6 text-center text-xs text-gray-600">
+          <p className="font-semibold">Quote Generated: {quoteDate.toLocaleDateString()}</p>
+          <p className="mt-1 text-red-600 font-semibold">Valid Until: {expirationDate.toLocaleDateString()} (30 days)</p>
+          <p className="mt-1">{formData.property_type || 'Multi-Family'} Property</p>
+          <p className="mt-1">*Previously Accumulated Depreciation</p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); compute(); }}>
       <div className="flex flex-wrap gap-3">
@@ -173,7 +540,7 @@ export default function QuoteForm() {
           Use Example Data
         </button>
         <button type="submit" className="px-5 py-2 rounded-xl bg-sky-600 text-white disabled:opacity-50" disabled={busy}>
-          {busy ? "Computingâ€¦" : "Compute Quote"}
+          {busy ? "Computing…" : "Compute Quote"}
         </button>
       </div>
 
@@ -233,7 +600,7 @@ export default function QuoteForm() {
           </Field>
           <Field label="Land Value input">
             <div className="flex gap-2">
-              <TabBtn active={form.land_mode === "percent"} onClick={() => set("land_mode", "percent")}>Percent (0â€“100)</TabBtn>
+              <TabBtn active={form.land_mode === "percent"} onClick={() => set("land_mode", "percent")}>Percent (0–100)</TabBtn>
               <TabBtn active={form.land_mode === "dollars"} onClick={() => set("land_mode", "dollars")}>Dollars ($)</TabBtn>
             </div>
           </Field>
@@ -247,7 +614,7 @@ export default function QuoteForm() {
               <option>2W $1000</option>
             </select>
           </Field>
-          <Field label="Price Override ($) â€” requires password">
+          <Field label="Price Override ($) — requires password">
             <input className="field" value={form.price_override || ""} onChange={(e) => set("price_override", e.target.value)} placeholder="(optional)" aria-label="Price Override" />
           </Field>
         </Grid>
@@ -334,25 +701,8 @@ export default function QuoteForm() {
         <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm whitespace-pre-wrap">{err}</div>
       )}
 
-      {result && (
-        <div className="card p-5">
-          <h3 className="text-lg font-semibold mb-2">Quote Summary</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <KV label="Base" value={money(result.base_quote)} />
-            <KV label="Final" value={money(result.final_quote)} />
-          </div>
-          <div className="mt-4 border-t pt-3 text-sm">
-            {Object.entries(result.parts || {}).map(([k, v]) => (
-              <div key={k} className="flex justify-between py-0.5">
-                <span className="text-slate-600">{k}</span>
-                <span className="font-medium">
-                  {typeof v === "number" ? money(v) : String(v)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* PDF Display replaces simple summary */}
+      {result && <PDFDisplay quoteData={result} formData={form} />}
     </form>
   );
 }

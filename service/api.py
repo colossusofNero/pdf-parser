@@ -10,7 +10,7 @@ from engine.quote_calc import QuoteCalculator
 from .schemas import QuoteInputs, QuoteResult, QuoteDoc 
 
 # -------- App & engine setup --------
-XLSX_PATH = r"C:\Users\scott\Claude_Code\Online_quote_RCGV\Base Pricing27.1_Pro_SMART_RCGV.xlsx"  # adjust if needed
+XLSX_PATH = r"C:\Users\scott\Claude_Code\Online_quote_RCGV\Base Pricing27.1_Pro_SMART_RCGV.xlsx"
 calc = QuoteCalculator(XLSX_PATH)
 
 app = FastAPI(title="RCGV Quote Tools", version="1.0")
