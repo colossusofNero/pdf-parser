@@ -242,7 +242,7 @@ export default function QuoteFormWithAI() {
           <div className="flex items-center gap-6">
             <div className="bg-white p-3 rounded-lg shadow-lg">
               <img 
-                src="https://i.imgur.com/TswzClB.jpeg" 
+                src="https://i.imgur.com/CzRehap.jpeg" 
                 alt="RCG Logo" 
                 className="h-16 w-16 object-contain"
               />
