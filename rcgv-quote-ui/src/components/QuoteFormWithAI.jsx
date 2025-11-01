@@ -457,11 +457,13 @@ export default function QuoteFormWithAI() {
       {/* Header with Logo */}
       <div className="bg-white border-b-2 shadow-sm" style={{ borderColor: '#558ca5' }}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-4">
-          <img 
-            src="https://i.imgur.com/TswzClB.jpeg" 
-            alt="RCGV Logo" 
-            className="h-16 w-auto"
-          />
+          <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+            <img 
+              src="https://i.imgur.com/CzRehap.jpeg" 
+              alt="RCGV Logo" 
+              className="h-12 w-12 object-contain"
+            />
+          </div>
           <div>
             <h1 className="text-2xl font-bold" style={{ color: '#232940' }}>RCGV Quote Assistant</h1>
             <p className="text-sm" style={{ color: '#558ca5' }}>Cost Segregation Specialists</p>
