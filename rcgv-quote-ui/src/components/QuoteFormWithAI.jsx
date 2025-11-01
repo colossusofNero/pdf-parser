@@ -239,15 +239,17 @@ export default function QuoteFormWithAI() {
               🎉 {seasonalDiscount.label}
             </div>
           )}
-          <div className="flex items-center gap-4">
-            <img 
-              src="https://i.imgur.com/TswzClB.jpeg" 
-              alt="RCGV Logo" 
-              className="h-20 w-auto bg-white p-2 rounded-lg shadow-lg"
-            />
+          <div className="flex items-center gap-6">
+            <div className="bg-white p-3 rounded-lg shadow-lg">
+              <img 
+                src="https://i.imgur.com/TswzClB.jpeg" 
+                alt="RCG Logo" 
+                className="h-16 w-16 object-contain"
+              />
+            </div>
             <div>
               <h1 className="text-4xl font-bold">Cost Segregation Quote</h1>
-              <p className="text-blue-200 text-lg tracking-wide">VALUATION</p>
+              <p className="text-blue-200 text-lg tracking-wider">VALUATION</p>
             </div>
           </div>
         </div>
