@@ -1,7 +1,10 @@
 ﻿// src/App.jsx
 import { useState, useEffect } from "react";
-import QuoteForm from "./components/QuoteForm.jsx";
+import QuoteFormWithAI from './components/QuoteFormWithAI.jsx';
 
+export default function App() {
+  return <QuoteFormWithAI />;
+}
 const apiBase = import.meta.env.VITE_API_BASE || "";
 
 export default function App() {
