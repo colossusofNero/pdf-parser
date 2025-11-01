@@ -474,7 +474,7 @@ export default function QuoteFormWithAI() {
       {/* AI Assistant Floating Button */}
       <button
         onClick={() => setAiOpen(!aiOpen)}
-        className="fixed bottom-6 right-6 z-50 text-white rounded-full p-4 shadow-lg transition-all hover:scale-110"
+        className="fixed bottom-8 right-8 z-40 text-white rounded-full p-4 shadow-2xl transition-all hover:scale-110 border-2 border-white"
         style={{ backgroundColor: '#558ca5' }}
         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#457a8f'}
         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#558ca5'}
