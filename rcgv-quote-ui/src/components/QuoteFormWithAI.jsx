@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-// Leave apiBase empty when using Vercel proxy rewrites:
-//  /quote/*  -> /api/quote/*  (to BACKEND_URL)
-//  /agent/*  -> /api/agent/*
 const apiBase = import.meta.env.VITE_API_BASE_URL || "";
 
 const EXAMPLE = {
@@ -25,8 +22,13 @@ const EXAMPLE = {
   purchase_date: "2025-06-15",
   tax_year: 2025,
   tax_deadline: "October",
-  land_mode: "percent", // "percent" | "dollars"
+  land_mode: "percent",
   land_value: "10",
+  capex: "No",
+  capex_date: "",
+  capex_amount: "",
+  is_1031: "No",
+  pad_deferred_growth: "0",
   rush: "No Rush",
   price_override: ""
 };
@@ -162,7 +164,13 @@ export default function QuoteFormWithAI() {
             <div ref={chatEndRef} />
           </div>
           <div className="p-3 border-t flex gap-2">
-            <input className="w-full border rounded px-3 py-2" value={aiInput} onChange={(e) => setAiInput(e.target.value)} placeholder="Ask about pricing, inputs, etc." />
+            <input 
+              className="w-full border rounded px-3 py-2" 
+              value={aiInput} 
+              onChange={(e) => setAiInput(e.target.value)} 
+              onKeyPress={(e) => e.key === 'Enter' && sendAi()}
+              placeholder="Ask about pricing, inputs, etc." 
+            />
             <button onClick={sendAi} disabled={aiBusy} className="px-3 py-2 rounded text-white" style={{ backgroundColor: "#558ca5" }}>
               {aiBusy ? "..." : "Send"}
             </button>
@@ -175,81 +183,400 @@ export default function QuoteFormWithAI() {
         {/* FORM (no-print) */}
         <div className="no-print bg-white rounded-lg shadow-md p-6 mb-8">
           <form onSubmit={onSubmit} className="space-y-6">
-            {/* purchase & valuation */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <label className="block">
-                <span className="text-sm font-semibold">Purchase Price ($)</span>
-                <input className="mt-1 w-full border rounded px-3 py-2"
-                       value={form.purchase_price}
-                       onChange={(e) => set("purchase_price", e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold">ZIP Code</span>
-                <input className="mt-1 w-full border rounded px-3 py-2"
-                       value={form.zip_code}
-                       onChange={(e) => set("zip_code", e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold">Land Value Mode</span>
-                <select className="mt-1 w-full border rounded px-3 py-2"
-                        value={form.land_mode}
-                        onChange={(e) => set("land_mode", e.target.value)}>
-                  <option value="percent">% of Purchase Price</option>
-                  <option value="dollars">Known Land Value ($)</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold">
-                  {form.land_mode === "dollars" ? "Land Value ($)" : "Land Value (%)"}
-                </span>
-                <input className="mt-1 w-full border rounded px-3 py-2"
-                       value={form.land_value}
-                       onChange={(e) => set("land_value", e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold">Rush Processing</span>
-                <select className="mt-1 w-full border rounded px-3 py-2"
-                        value={form.rush}
-                        onChange={(e) => set("rush", e.target.value)}>
-                  <option>No Rush</option>
-                  <option>4W $500</option>
-                  <option>2W $1000</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold">Price Override (optional)</span>
-                <input className="mt-1 w-full border rounded px-3 py-2"
-                       placeholder="Leave blank for standard pricing"
-                       value={form.price_override}
-                       onChange={(e) => set("price_override", e.target.value)} />
-              </label>
-            </div>
-
-            <div className="flex gap-3">
-              <button type="button"
-                      onClick={() => setForm(EXAMPLE)}
-                      className="px-4 py-2 rounded border">Use Example Data</button>
-              <button type="submit"
-                      disabled={busy}
-                      className="px-4 py-2 rounded text-white"
-                      style={{ backgroundColor: "#558ca5" }}>
-                {busy ? "Computing..." : "Compute Quote"}
+            <div className="flex flex-wrap gap-3">
+              <button 
+                type="button" 
+                onClick={() => setForm(EXAMPLE)} 
+                className="px-6 py-2.5 rounded-lg border-2 bg-white hover:bg-gray-50 transition text-sm font-medium"
+                style={{ borderColor: '#558ca5', color: '#232940' }}
+              >
+                Use Example Data
+              </button>
+              <button 
+                type="submit"
+                className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md" 
+                style={{ backgroundColor: '#558ca5' }}
+                disabled={busy}
+              >
+                {busy ? "Computing…" : "Compute Quote"}
               </button>
             </div>
 
-            {err && <div className="text-red-600 text-sm">Error: {err}</div>}
+            {/* Contact Information */}
+            <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
+              <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Contact Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Name</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.name} 
+                    onChange={(e) => set("name", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Email</label>
+                  <input 
+                    type="email"
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.email} 
+                    onChange={(e) => set("email", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Phone</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.phone} 
+                    onChange={(e) => set("phone", e.target.value)} 
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Property Information */}
+            <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
+              <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Property Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Owner/Entity</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.owner} 
+                    onChange={(e) => set("owner", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Property Address</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.address} 
+                    onChange={(e) => set("address", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">ZIP Code</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.zip_code} 
+                    onChange={(e) => set("zip_code", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Property Type</label>
+                  <div className="flex flex-wrap gap-2">
+                    {["Multi-Family", "Office", "Retail", "Industrial", "Mixed-Use", "Hotel", "Other"].map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => set("property_type", type)}
+                        className={`px-4 py-2 rounded-md border-2 transition text-sm font-medium ${
+                          form.property_type === type
+                            ? "text-white font-semibold shadow-md"
+                            : "border-gray-300 bg-white hover:border-gray-400"
+                        }`}
+                        style={form.property_type === type
+                          ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                          : { borderColor: '#d1d5db' }}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Year Built</label>
+                  <input 
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.year_built} 
+                    onChange={(e) => set("year_built", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Building Sq Ft</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.sqft_building} 
+                    onChange={(e) => set("sqft_building", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Land (Acres)</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.acres_land} 
+                    onChange={(e) => set("acres_land", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Floors</label>
+                  <input 
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.floors} 
+                    onChange={(e) => set("floors", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Multiple Properties</label>
+                  <input 
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.multiple_properties} 
+                    onChange={(e) => set("multiple_properties", e.target.value)} 
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Purchase & Valuation */}
+            <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
+              <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Purchase & Valuation</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Purchase Price ($)</label>
+                  <input 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.purchase_price} 
+                    onChange={(e) => set("purchase_price", e.target.value)} 
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Land Value</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: "10%", mode: "percent", value: "10" },
+                      { label: "15%", mode: "percent", value: "15" },
+                      { label: "20%", mode: "percent", value: "20" },
+                      { label: "25%", mode: "percent", value: "25" },
+                      { label: "No Land Value", mode: "percent", value: "0" },
+                      { label: "Known Land Value", mode: "dollars", value: "" }
+                    ].map((opt) => (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        onClick={() => {
+                          set("land_mode", opt.mode);
+                          set("land_value", opt.value);
+                        }}
+                        className={`px-4 py-2 rounded-lg border-2 transition ${
+                          form.land_mode === opt.mode && (opt.mode === "dollars" || form.land_value === opt.value)
+                            ? "text-white font-semibold"
+                            : "border-gray-300 bg-white hover:border-gray-400"
+                        }`}
+                        style={form.land_mode === opt.mode && (opt.mode === "dollars" || form.land_value === opt.value)
+                          ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                          : { borderColor: '#d1d5db' }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {form.land_mode === "dollars" && (
+                    <div className="mt-3">
+                      <input 
+                        className="w-full px-3 py-2 border rounded-lg" 
+                        value={form.land_value}
+                        onChange={(e) => set("land_value", e.target.value)}
+                        placeholder="Enter dollar amount"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Purchase Date</label>
+                    <input 
+                      type="date"
+                      className="w-full px-3 py-2 border rounded-lg" 
+                      value={form.purchase_date} 
+                      onChange={(e) => set("purchase_date", e.target.value)} 
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Capital Expenditures?</label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => set("capex", "No")}
+                      className={`px-4 py-2 rounded-lg border-2 transition ${
+                        form.capex === "No"
+                          ? "text-white font-semibold"
+                          : "border-gray-300 bg-white hover:border-gray-400"
+                      }`}
+                      style={form.capex === "No"
+                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                        : { borderColor: '#d1d5db' }}
+                    >
+                      No
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => set("capex", "Yes")}
+                      className={`px-4 py-2 rounded-lg border-2 transition ${
+                        form.capex === "Yes"
+                          ? "text-white font-semibold"
+                          : "border-gray-300 bg-white hover:border-gray-400"
+                      }`}
+                      style={form.capex === "Yes"
+                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                        : { borderColor: '#d1d5db' }}
+                    >
+                      Yes
+                    </button>
+                  </div>
+                  {form.capex === "Yes" && (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">CapEx Amount ($)</label>
+                        <input 
+                          className="w-full px-3 py-2 border rounded-lg" 
+                          value={form.capex_amount} 
+                          onChange={(e) => set("capex_amount", e.target.value)} 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">CapEx Date</label>
+                        <input 
+                          type="date"
+                          className="w-full px-3 py-2 border rounded-lg" 
+                          value={form.capex_date} 
+                          onChange={(e) => set("capex_date", e.target.value)} 
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">1031 Exchange?</label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => set("is_1031", "No")}
+                      className={`px-4 py-2 rounded-lg border-2 transition ${
+                        form.is_1031 === "No"
+                          ? "text-white font-semibold"
+                          : "border-gray-300 bg-white hover:border-gray-400"
+                      }`}
+                      style={form.is_1031 === "No"
+                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                        : { borderColor: '#d1d5db' }}
+                    >
+                      No
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => set("is_1031", "Yes")}
+                      className={`px-4 py-2 rounded-lg border-2 transition ${
+                        form.is_1031 === "Yes"
+                          ? "text-white font-semibold"
+                          : "border-gray-300 bg-white hover:border-gray-400"
+                      }`}
+                      style={form.is_1031 === "Yes"
+                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                        : { borderColor: '#d1d5db' }}
+                    >
+                      Yes
+                    </button>
+                  </div>
+                  {form.is_1031 === "Yes" && (
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium mb-1">PAD Deferred Growth ($)</label>
+                      <input 
+                        className="w-full px-3 py-2 border rounded-lg" 
+                        value={form.pad_deferred_growth}
+                        onChange={(e) => set("pad_deferred_growth", e.target.value)}
+                        placeholder="Enter dollar amount"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Tax Year</label>
+                    <input 
+                      type="number"
+                      className="w-full px-3 py-2 border rounded-lg" 
+                      value={form.tax_year} 
+                      onChange={(e) => set("tax_year", e.target.value)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Tax Deadline</label>
+                    <select 
+                      className="w-full px-3 py-2 border rounded-lg" 
+                      value={form.tax_deadline} 
+                      onChange={(e) => set("tax_deadline", e.target.value)}
+                    >
+                      <option>April</option>
+                      <option>October</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Rush Processing</label>
+                  <div className="flex flex-wrap gap-2">
+                    {["No Rush", "4W $500", "2W $1000"].map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => set("rush", opt)}
+                        className={`px-4 py-2 rounded-lg border-2 transition ${
+                          form.rush === opt
+                            ? "text-white font-semibold"
+                            : "border-gray-300 bg-white hover:border-gray-400"
+                        }`}
+                        style={form.rush === opt
+                          ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                          : { borderColor: '#d1d5db' }}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Internal Options */}
+            <div className="border-2 p-4 rounded-lg" style={{ backgroundColor: '#fff3cd', borderColor: '#ffc107' }}>
+              <h3 className="font-bold text-lg mb-3 flex items-center gap-2" style={{ color: '#232940' }}>
+                <span>⚠️ Internal Use Only</span>
+              </h3>
+              <div>
+                <label className="block text-sm font-medium mb-1">Price Override (optional)</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg bg-white" 
+                  value={form.price_override} 
+                  onChange={(e) => set("price_override", e.target.value)} 
+                  placeholder="Leave blank for standard pricing"
+                />
+                <p className="text-xs text-gray-600 mt-1">Only use this field to manually override the calculated price</p>
+              </div>
+            </div>
+
+            {err && (
+              <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{err}</div>
+            )}
           </form>
         </div>
 
-        {/* PDF DISPLAY (prints only this area) */}
+        {/* PDF Display */}
         <PDFDisplay result={result} form={form} />
       </div>
     </div>
   );
 }
 
-/* ---------------- PDF Display ---------------- */
-
+/* ---------------- PDF Display Component ---------------- */
 function PDFDisplay({ result, form }) {
   if (!result) return (
     <div className="bg-white p-4 rounded-lg shadow-sm text-center text-gray-400">
@@ -258,7 +585,8 @@ function PDFDisplay({ result, form }) {
   );
 
   const now = new Date();
-  const expires = new Date(now); expires.setDate(expires.getDate() + 30);
+  const expires = new Date(now); 
+  expires.setDate(expires.getDate() + 30);
 
   const purchasePrice = num(form.purchase_price);
   const landVal = form.land_mode === "dollars" ? num(form.land_value) : purchasePrice * pct(form.land_value);
@@ -266,7 +594,6 @@ function PDFDisplay({ result, form }) {
 
   const baseQuote = result.base_quote ?? result.final_quote ?? 0;
 
-  // Basic seasonal discount (same as earlier discussion)
   const seasonal = (() => {
     const m = now.getMonth() + 1, d = now.getDate();
     if ((m === 10 && d >= 15) || (m === 11 && d <= 15) || (m === 4 && d >= 15) || (m === 5 && d <= 15))
@@ -282,19 +609,42 @@ function PDFDisplay({ result, form }) {
   const payOverTime = (baseQuote / 4) * disc;
   const standardBeforeDiscounts = baseQuote * disc;
 
-  // Demo schedule (replace with real schedule if your backend returns it)
   const schedule = [
     { y: 2025, cs: 66073, sd: 113694, ts: 113694, bd: 569423 },
     { y: 2026, cs: 83446, sd: 177172, ts: 177172, bd: 102805 },
-    // ... (keep your full list)
+    { y: 2027, cs: 83446, sd: 145582, ts: 145582, bd: 90169 },
+    { y: 2028, cs: 83446, sd: 124860, ts: 124860, bd: 81881 },
+    { y: 2029, cs: 83446, sd: 120001, ts: 120001, bd: 79937 },
+    { y: 2030, cs: 83446, sd: 104065, ts: 104065, bd: 73563 },
+    { y: 2031, cs: 83446, sd: 90465, ts: 90465, bd: 68122 },
+    { y: 2032, cs: 83446, sd: 90465, ts: 90465, bd: 68122 },
+    { y: 2033, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
+    { y: 2034, cs: 83469, sd: 90479, ts: 90479, bd: 68137 },
+    { y: 2035, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
+    { y: 2036, cs: 83469, sd: 90479, ts: 90479, bd: 68137 },
+    { y: 2037, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
+    { y: 2038, cs: 83469, sd: 90479, ts: 90479, bd: 68137 },
+    { y: 2039, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
+    { y: 2040, cs: 83469, sd: 71861, ts: 71861, bd: 60690 },
+    { y: 2041, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
+    { y: 2042, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
+    { y: 2043, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
+    { y: 2044, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
+    { y: 2045, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
+    { y: 2046, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
+    { y: 2047, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
+    { y: 2048, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
+    { y: 2049, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
+    { y: 2050, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
+    { y: 2051, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
     { y: 2052, cs: 59119, sd: 37710, ts: 37710, bd: 37710 }
   ];
+  
   const tots = schedule.reduce((a, r) => ({
     cs: a.cs + r.cs, sd: a.sd + r.sd, ts: a.ts + r.ts, bd: a.bd + r.bd
   }), { cs: 0, sd: 0, ts: 0, bd: 0 });
 
   return (
-    // <-- only this section prints
     <div id="quote-pdf" className="pdf-display w-full max-w-5xl mx-auto bg-white shadow-2xl rounded-lg overflow-hidden my-8">
       {/* Header bar */}
       <div className="text-white p-8 relative" style={{ background: "linear-gradient(to right, #232940, #558ca5)" }}>
@@ -401,7 +751,7 @@ function PDFDisplay({ result, form }) {
           </div>
         </div>
 
-        {/* Force the 1→2 page split */}
+        {/* Force page break for printing */}
         <div className="page-break"></div>
 
         {/* Depreciation table */}
@@ -444,7 +794,7 @@ function PDFDisplay({ result, form }) {
           </div>
         </div>
 
-        {/* Footer + Print button (button is hidden in print) */}
+        {/* Footer + Print button */}
         <div className="text-center space-y-3">
           <button
             onClick={() => window.print()}
