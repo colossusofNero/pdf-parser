@@ -456,7 +456,7 @@ export default function QuoteFormWithAI() {
     <div className="min-h-screen bg-gray-50 relative">
       {/* Header with Logo */}
       <div className="bg-white border-b-2 shadow-sm" style={{ borderColor: '#558ca5' }}>
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-4">
+        <div className="w-full max-w-4xl mx-auto px-6 py-4 flex items-center gap-4">
           <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200">
             <img 
               src="https://i.imgur.com/CzRehap.jpeg" 
@@ -487,7 +487,7 @@ export default function QuoteFormWithAI() {
 
       {/* AI Chat Panel */}
       {aiOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-96 h-[600px] bg-white rounded-lg shadow-2xl flex flex-col">
+        <div className="fixed bottom-28 right-8 z-50 w-96 h-[600px] bg-white rounded-lg shadow-2xl flex flex-col border-2" style={{ borderColor: '#558ca5' }}>
           <div className="text-white p-4 rounded-t-lg flex justify-between items-center" style={{ backgroundColor: '#232940' }}>
             <h3 className="font-bold text-lg">AI Quote Assistant</h3>
             <button 
@@ -576,7 +576,7 @@ export default function QuoteFormWithAI() {
       )}
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto p-6">
+      <div className="w-full max-w-4xl mx-auto p-6">
         {/* Form Section */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
           <div className="space-y-6">
@@ -584,14 +584,14 @@ export default function QuoteFormWithAI() {
               <button 
                 type="button" 
                 onClick={() => setForm(EXAMPLE)} 
-                className="px-4 py-2 rounded-xl border-2 bg-white hover:bg-gray-50 transition"
+                className="px-6 py-2.5 rounded-lg border-2 bg-white hover:bg-gray-50 transition text-sm font-medium"
                 style={{ borderColor: '#558ca5', color: '#232940' }}
               >
                 Use Example Data
               </button>
               <button 
                 onClick={handleSubmit}
-                className="px-5 py-2 rounded-xl text-white disabled:opacity-50 transition" 
+                className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md" 
                 style={{ backgroundColor: '#558ca5' }}
                 onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#457a8f')}
                 onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#558ca5')}
@@ -669,9 +669,9 @@ export default function QuoteFormWithAI() {
                         key={type}
                         type="button"
                         onClick={() => set("property_type", type)}
-                        className={`px-4 py-2 rounded-lg border-2 transition ${
+                        className={`px-4 py-2 rounded-md border-2 transition text-sm font-medium ${
                           form.property_type === type
-                            ? "text-white font-semibold"
+                            ? "text-white font-semibold shadow-md"
                             : "border-gray-300 bg-white hover:border-gray-400"
                         }`}
                         style={form.property_type === type
