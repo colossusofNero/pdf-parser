@@ -1,4 +1,3 @@
-﻿// static: Vercel Node.js serverless function
 export default async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -11,13 +10,12 @@ export default async function handler(req, res) {
   if (!backend) return res.status(500).json({ error: 'BACKEND_URL not set' });
 
   try {
-    // Safely read JSON body in Vercel Node runtime
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const raw = Buffer.concat(chunks).toString('utf8');
     const body = raw ? JSON.parse(raw) : {};
 
-    const upstream = await fetch(`${backend}/quote/compute`, {
+    const upstream = await fetch(`${backend}/agent/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)

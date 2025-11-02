@@ -1,8 +1,6 @@
 {
   "rewrites": [
-    {
-      "source": "/quote/:path*",
-      "destination": "/api/quote/:path*"
-    }
+    { "source": "/quote/:path*", "destination": "/api/quote/:path*" },
+    { "source": "/agent/:path*", "destination": "/api/agent/:path*" }
   ]
 }
