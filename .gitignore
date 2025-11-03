@@ -20,5 +20,5 @@ Thumbs.db
 *.env
 .env.*
 # Excel cache or big local artifacts (optional)
-*.xlsx
+# *.xlsx
 '@ | Out-File -Encoding utf8 .gitignore

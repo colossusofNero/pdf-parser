@@ -74,10 +74,24 @@ export default function QuoteFormWithAI() {
         rush: form.rush,
         premium: "No",
         referral: "No",
-        price_override: form.price_override ? num(form.price_override) : 0
+        price_override: form.price_override ? num(form.price_override) : 0,
+        // Include all form fields for schedule calculation
+        property_type: form.property_type,
+        sqft_building: num(form.sqft_building),
+        acres_land: parseFloat(form.acres_land),
+        floors: parseInt(form.floors),
+        multiple_properties: parseInt(form.multiple_properties),
+        purchase_date: form.purchase_date,
+        tax_year: parseInt(form.tax_year),
+        capex: form.capex,
+        capex_amount: form.capex === "Yes" ? num(form.capex_amount) : 0,
+        capex_date: form.capex_date,
+        is_1031: form.is_1031,
+        pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
       };
 
-      const r = await fetch(`${apiBase}/quote/compute`, {
+      // Call the /quote/document endpoint to get the full schedule
+      const r = await fetch(`${apiBase}/quote/document`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -588,11 +602,14 @@ function PDFDisplay({ result, form }) {
   const expires = new Date(now); 
   expires.setDate(expires.getDate() + 30);
 
-  const purchasePrice = num(form.purchase_price);
-  const landVal = form.land_mode === "dollars" ? num(form.land_value) : purchasePrice * pct(form.land_value);
-  const buildingValue = purchasePrice - landVal;
+  const purchasePrice = result.purchase_price || num(form.purchase_price);
+  const landVal = result.land_value || 0;
+  const buildingValue = result.building_value || (purchasePrice - landVal);
 
-  const baseQuote = result.base_quote ?? result.final_quote ?? 0;
+  // Use the payments object from the API response
+  const payments = result.payments || {};
+  const baseQuote = payments.originally_quoted || 0;
+  const finalQuote = baseQuote; // Can be adjusted if needed
 
   const seasonal = (() => {
     const m = now.getMonth() + 1, d = now.getDate();
@@ -604,44 +621,19 @@ function PDFDisplay({ result, form }) {
   })();
 
   const disc = 1 - seasonal.rate;
-  const upfront = baseQuote * 0.91 * disc;
-  const split5050 = (baseQuote / 2) * disc;
-  const payOverTime = (baseQuote / 4) * disc;
+  const upfront = (payments.pay_upfront || baseQuote * 0.91) * disc;
+  const split5050 = (payments.pay_50_50 || baseQuote / 2) * disc;
+  const payOverTime = (payments.pay_over_time_amount || baseQuote / 4) * disc;
   const standardBeforeDiscounts = baseQuote * disc;
 
-  const schedule = [
-    { y: 2025, cs: 66073, sd: 113694, ts: 113694, bd: 569423 },
-    { y: 2026, cs: 83446, sd: 177172, ts: 177172, bd: 102805 },
-    { y: 2027, cs: 83446, sd: 145582, ts: 145582, bd: 90169 },
-    { y: 2028, cs: 83446, sd: 124860, ts: 124860, bd: 81881 },
-    { y: 2029, cs: 83446, sd: 120001, ts: 120001, bd: 79937 },
-    { y: 2030, cs: 83446, sd: 104065, ts: 104065, bd: 73563 },
-    { y: 2031, cs: 83446, sd: 90465, ts: 90465, bd: 68122 },
-    { y: 2032, cs: 83446, sd: 90465, ts: 90465, bd: 68122 },
-    { y: 2033, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
-    { y: 2034, cs: 83469, sd: 90479, ts: 90479, bd: 68137 },
-    { y: 2035, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
-    { y: 2036, cs: 83469, sd: 90479, ts: 90479, bd: 68137 },
-    { y: 2037, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
-    { y: 2038, cs: 83469, sd: 90479, ts: 90479, bd: 68137 },
-    { y: 2039, cs: 83446, sd: 90528, ts: 90528, bd: 68148 },
-    { y: 2040, cs: 83469, sd: 71861, ts: 71861, bd: 60690 },
-    { y: 2041, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
-    { y: 2042, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
-    { y: 2043, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
-    { y: 2044, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
-    { y: 2045, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
-    { y: 2046, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
-    { y: 2047, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
-    { y: 2048, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
-    { y: 2049, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
-    { y: 2050, cs: 83469, sd: 53242, ts: 53242, bd: 53242 },
-    { y: 2051, cs: 83446, sd: 53228, ts: 53228, bd: 53228 },
-    { y: 2052, cs: 59119, sd: 37710, ts: 37710, bd: 37710 }
-  ];
+  // Use schedule from API response, or fallback to empty array
+  const schedule = result.schedule || [];
   
   const tots = schedule.reduce((a, r) => ({
-    cs: a.cs + r.cs, sd: a.sd + r.sd, ts: a.ts + r.ts, bd: a.bd + r.bd
+    cs: a.cs + (r.cost_seg_est || 0),
+    sd: a.sd + (r.std_dep || 0),
+    ts: a.ts + (r.trad_cost_seg || 0),
+    bd: a.bd + (r.bonus_dep || 0)
   }), { cs: 0, sd: 0, ts: 0, bd: 0 });
 
   return (
@@ -743,14 +735,14 @@ function PDFDisplay({ result, form }) {
                 
                 <div className="flex justify-between"><span className="font-semibold">Service Fee:</span><span>{money(baseQuote)}</span></div>
                 <div className="flex justify-between"><span className="font-semibold">Rush Fee:</span><span>{form.rush !== "No Rush" ? form.rush : "None"}</span></div>
-                <div className="flex justify-between border-t pt-1.5 mb-2"><span className="font-semibold">Final Quote:</span><span className="font-bold text-blue-600">{money(result.final_quote)}</span></div>
+                <div className="flex justify-between border-t pt-1.5 mb-2"><span className="font-semibold">Final Quote:</span><span className="font-bold text-blue-600">{money(finalQuote)}</span></div>
                 
                 {/* VALUE HIGHLIGHT */}
                 <div className="bg-green-50 border-2 border-green-500 rounded p-2 mt-2">
                   <div className="text-[9px] font-bold text-green-800 mb-1">💰 YOUR TAX BENEFIT</div>
                   <div className="text-xs font-semibold text-gray-700">Year 1 Bonus Depreciation:</div>
-                  <div className="text-2xl font-bold text-green-700">{money(schedule[0].bd)}</div>
-                  <div className="text-[8px] text-gray-600 mt-1">vs. {money(schedule[0].sd)} standard</div>
+                  <div className="text-2xl font-bold text-green-700">{schedule.length > 0 ? money(schedule[0].bonus_dep) : "$0"}</div>
+                  <div className="text-[8px] text-gray-600 mt-1">vs. {schedule.length > 0 ? money(schedule[0].std_dep) : "$0"} standard</div>
                 </div>
               </div>
             </div>
@@ -804,10 +796,10 @@ function PDFDisplay({ result, form }) {
                 <tbody>
                   {schedule.map((r, i) => (
                     <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                      <td className="px-2 py-0.5 font-semibold">{r.y}</td>
-                      <td className="px-2 py-0.5 text-right text-gray-500">{money(r.sd)}</td>
-                      <td className="px-2 py-0.5 text-right text-blue-700">{money(r.ts)}</td>
-                      <td className="px-2 py-0.5 text-right font-bold bg-green-50 text-green-700">{money(r.bd)}</td>
+                      <td className="px-2 py-0.5 font-semibold">{r.year}</td>
+                      <td className="px-2 py-0.5 text-right text-gray-500">{money(r.std_dep)}</td>
+                      <td className="px-2 py-0.5 text-right text-blue-700">{money(r.trad_cost_seg)}</td>
+                      <td className="px-2 py-0.5 text-right font-bold bg-green-50 text-green-700">{money(r.bonus_dep)}</td>
                     </tr>
                   ))}
                   <tr className="bg-blue-100 border-t-2 border-blue-400 font-bold">
@@ -829,15 +821,15 @@ function PDFDisplay({ result, form }) {
               <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
                 <div className="bg-white rounded p-2">
                   <div className="text-gray-600">Standard (Current)</div>
-                  <div className="font-bold text-gray-700">{money(schedule[0].sd)}</div>
+                  <div className="font-bold text-gray-700">{schedule.length > 0 ? money(schedule[0].std_dep) : "$0"}</div>
                 </div>
                 <div className="bg-white rounded p-2">
                   <div className="text-blue-700">Traditional Cost Seg</div>
-                  <div className="font-bold text-blue-800">{money(schedule[0].ts)}</div>
+                  <div className="font-bold text-blue-800">{schedule.length > 0 ? money(schedule[0].trad_cost_seg) : "$0"}</div>
                 </div>
                 <div className="bg-green-200 rounded p-2 border-2 border-green-600">
                   <div className="text-green-800 font-bold">★ Bonus Depreciation</div>
-                  <div className="font-bold text-green-900 text-base">{money(schedule[0].bd)}</div>
+                  <div className="font-bold text-green-900 text-base">{schedule.length > 0 ? money(schedule[0].bonus_dep) : "$0"}</div>
                 </div>
               </div>
             </div>
