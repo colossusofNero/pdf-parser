@@ -190,48 +190,78 @@ class QuoteCalculator:
         }
 
     def _find_schedule_table(self) -> pd.DataFrame:
-        xl = pd.ExcelFile(self.xlsx_path)
-        target_headers = {"cost seg est", "std. dep", "trad. cost seg", "bonus dep"}
-
-        candidate_names: List[str] = []
-        if len(xl.sheet_names) >= 4:
-            candidate_names.extend([xl.sheet_names[2], xl.sheet_names[3]])
-        candidate_names.extend([n for n in xl.sheet_names if n not in candidate_names])
-
-        for name in candidate_names:
-            df = xl.parse(name, header=None)
-            for i in range(min(30, len(df))):
-                row = df.iloc[i].astype(str).str.strip().str.lower()
-                if ("year" in row.values) and (len(target_headers.intersection(set(row.values))) >= 3):
-                    hdr_idx = i
-                    hdr = df.iloc[hdr_idx].astype(str).str.strip().tolist()
-                    body = df.iloc[hdr_idx + 1:].reset_index(drop=True)
-                    body.columns = hdr
-                    rename = {}
-                    for c in body.columns:
-                        low = str(c).strip().lower()
-                        if low.startswith("year"):
-                            rename[c] = "year"
-                        elif "cost seg est" in low:
-                            rename[c] = "cost_seg_est"
-                        elif "std" in low and "dep" in low:
-                            rename[c] = "std_dep"
-                        elif "trad" in low:
-                            rename[c] = "trad_cost_seg"
-                        elif "bonus" in low:
-                            rename[c] = "bonus_dep"
-                    body = body.rename(columns=rename)
-                    keep = [c for c in ["year", "cost_seg_est", "std_dep", "trad_cost_seg", "bonus_dep"] if c in body.columns]
-                    out = body[keep].dropna(how="all")
-                    for c in keep:
-                        if c == "year":
-                            out[c] = pd.to_numeric(out[c], errors="coerce")
-                        else:
-                            out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0)
-                    return out.dropna(subset=["year"])
-
+        """Extract depreciation schedule from YbyY data sheet."""
+        try:
+            xl = pd.ExcelFile(self.xlsx_path)
+            
+            # Try to find "YbyY data" sheet first (most likely location)
+            sheet_name = None
+            for name in xl.sheet_names:
+                if "ybyy" in name.lower() or "ybyydata" in name.lower().replace(" ", ""):
+                    sheet_name = name
+                    break
+            
+            if not sheet_name:
+                # Fallback to checking multiple sheets
+                sheet_name = xl.sheet_names[0] if xl.sheet_names else None
+            
+            if not sheet_name:
+                return pd.DataFrame(columns=["year", "cost_seg_est", "std_dep", "trad_cost_seg", "bonus_dep"])
+            
+            # Read the sheet
+            df = pd.read_excel(self.xlsx_path, sheet_name=sheet_name, header=None)
+            
+            # Look for the row with "Year", "Std", "Trad", "Bonus" headers (around row 3, columns 113-116)
+            for row_idx in range(min(10, len(df))):
+                row = df.iloc[row_idx].astype(str).str.strip().str.lower()
+                
+                # Find the "Year" column
+                year_cols = [i for i, val in enumerate(row) if val == "year"]
+                
+                for year_col in year_cols:
+                    # Check if Std, Trad, Bonus are nearby
+                    if year_col + 3 < len(row):
+                        next_cols = row.iloc[year_col:year_col+4].tolist()
+                        if "std" in next_cols and "trad" in next_cols and "bonus" in next_cols:
+                            # Found it! Extract the data
+                            std_col = year_col + next_cols.index("std")
+                            trad_col = year_col + next_cols.index("trad")
+                            bonus_col = year_col + next_cols.index("bonus")
+                            
+                            # Extract data starting from the next row
+                            data_rows = []
+                            for data_idx in range(row_idx + 1, len(df)):
+                                year_val = df.iloc[data_idx, year_col]
+                                
+                                # Stop if we hit non-numeric year
+                                try:
+                                    year_num = int(float(year_val))
+                                    if year_num < 2000 or year_num > 2100:
+                                        break
+                                except (ValueError, TypeError):
+                                    break
+                                
+                                std_val = df.iloc[data_idx, std_col]
+                                trad_val = df.iloc[data_idx, trad_col]
+                                bonus_val = df.iloc[data_idx, bonus_col]
+                                
+                                data_rows.append({
+                                    "year": year_num,
+                                    "cost_seg_est": float(trad_val) if pd.notna(trad_val) else 0.0,
+                                    "std_dep": float(std_val) if pd.notna(std_val) else 0.0,
+                                    "trad_cost_seg": float(trad_val) if pd.notna(trad_val) else 0.0,
+                                    "bonus_dep": float(bonus_val) if pd.notna(bonus_val) else 0.0,
+                                })
+                            
+                            if data_rows:
+                                return pd.DataFrame(data_rows)
+            
+        except Exception as e:
+            print(f"Error reading schedule: {e}")
+        
+        # Return empty DataFrame if nothing found
         return pd.DataFrame(columns=["year", "cost_seg_est", "std_dep", "trad_cost_seg", "bonus_dep"])
-
+    
     def build_quote_doc(self, inputs: Dict, final_quote_amount: float, rush_fee: float = 0.0) -> Dict:
         """
         Returns a dict for the frontend PDF-like renderer (header + payments + schedule).
