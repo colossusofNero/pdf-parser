@@ -646,171 +646,200 @@ function PDFDisplay({ result, form }) {
 
   return (
     <div id="quote-pdf" className="pdf-display w-full max-w-5xl mx-auto bg-white shadow-2xl rounded-lg overflow-hidden my-8">
-      {/* Header bar */}
-      <div className="text-white p-8 relative" style={{ background: "linear-gradient(to right, #232940, #558ca5)" }}>
-        {seasonal.label && (
-          <div className="absolute top-4 right-4 bg-yellow-400 text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-lg">
-            🎉 {seasonal.label}
+      {/* ========== PAGE 1 ========== */}
+      <div className="page-1" style={{ minHeight: '11in', pageBreakAfter: 'always' }}>
+        {/* Header bar */}
+        <div className="text-white p-6 relative" style={{ background: "linear-gradient(to right, #232940, #558ca5)" }}>
+          {seasonal.label && (
+            <div className="absolute top-4 right-4 bg-yellow-400 text-gray-900 px-3 py-1.5 rounded-full font-bold text-xs shadow-lg">
+              🎉 {seasonal.label}
+            </div>
+          )}
+          <div className="flex items-center gap-4">
+            <div className="bg-white p-2 rounded-lg shadow-lg">
+              <img src="https://i.imgur.com/CzRehap.jpeg" alt="RCG Logo" className="h-12 w-12 object-contain" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Cost Segregation Quote</h1>
+              <p className="text-blue-200 text-sm tracking-wider">VALUATION</p>
+            </div>
           </div>
-        )}
-        <div className="flex items-center gap-6">
-          <div className="bg-white p-3 rounded-lg shadow-lg">
-            <img src="https://i.imgur.com/CzRehap.jpeg" alt="RCG Logo" className="h-16 w-16 object-contain" />
-          </div>
+        </div>
+
+        {/* Validity */}
+        <div className="bg-yellow-50 border-b-2 border-yellow-300 px-6 py-2 flex justify-between items-center text-sm">
           <div>
-            <h1 className="text-4xl font-bold">Cost Segregation Quote</h1>
-            <p className="text-blue-200 text-lg tracking-wider">VALUATION</p>
+            <span className="font-semibold text-gray-700">Quote Date:</span>
+            <span className="ml-2 text-gray-900">
+              {now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+            </span>
+          </div>
+          <div className="bg-red-100 border border-red-300 px-3 py-0.5 rounded-full">
+            <span className="font-semibold text-red-700">Valid Until:</span>
+            <span className="ml-2 text-red-900 font-bold">
+              {expires.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Company + Contact - Fixed height */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200" style={{ minHeight: '180px' }}>
+              <h2 className="text-lg font-bold text-gray-900 mb-3 border-b pb-1">Company Information</h2>
+              <div className="space-y-1.5 text-xs">
+                <div><span className="font-semibold">Owner:</span> {form.owner}</div>
+                <div><span className="font-semibold">Property:</span> {form.address}</div>
+                <div><span className="font-semibold">Type:</span> {form.property_type}</div>
+                <div><span className="font-semibold">Year Built:</span> {form.year_built}</div>
+                <div><span className="font-semibold">Building Area:</span> {num(form.sqft_building).toLocaleString()} sq ft</div>
+                <div><span className="font-semibold">Land Area:</span> {form.acres_land} acres</div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200" style={{ minHeight: '180px' }}>
+              <h2 className="text-lg font-bold text-gray-900 mb-3 border-b pb-1">Contact Information</h2>
+              <div className="space-y-1.5 text-xs">
+                <div><span className="font-semibold">Name:</span> {form.name}</div>
+                <div><span className="font-semibold">Email:</span> {form.email}</div>
+                <div><span className="font-semibold">Phone:</span> {form.phone}</div>
+                <div><span className="font-semibold">Purchase Date:</span> {form.purchase_date}</div>
+                <div><span className="font-semibold">Tax Year:</span> {form.tax_year}</div>
+                <div><span className="font-semibold">Tax Deadline:</span> {form.tax_deadline}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Fee structure - Fixed height */}
+          <div className="border-2 rounded-lg p-4" style={{ backgroundColor: "#e8f4f8", borderColor: "#558ca5", minHeight: '240px' }}>
+            <h2 className="text-xl font-bold mb-3" style={{ color: "#232940" }}>Professional Fee Structure</h2>
+            <div className="grid md:grid-cols-3 gap-3 mb-4">
+              <div className="bg-white p-3 rounded-lg border-2 border-green-400 shadow-sm">
+                <div className="text-xs font-semibold text-gray-600 mb-1">Pay Upfront (9% Discount)</div>
+                <div className="text-2xl font-bold text-green-600">{money(upfront)}</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg border-2 border-blue-400 shadow-sm">
+                <div className="text-xs font-semibold text-gray-600 mb-1">50/50 Split</div>
+                <div className="text-2xl font-bold text-blue-600">{money(split5050)}</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">Now / Upon Completion</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg border-2 border-purple-400 shadow-sm">
+                <div className="text-xs font-semibold text-gray-600 mb-1">Pay Over Time</div>
+                <div className="text-2xl font-bold text-purple-600">{money(payOverTime)}</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">Quarterly installments</div>
+              </div>
+            </div>
+
+            <div className="bg-white p-3 rounded-lg">
+              <div className="text-xs text-gray-600 mb-1">Standard Fee (before discounts):</div>
+              <div className="text-xl font-bold text-gray-900">{money(standardBeforeDiscounts)}</div>
+            </div>
+          </div>
+
+          {/* Valuation Breakdown - Fixed height */}
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200" style={{ minHeight: '140px' }}>
+            <h2 className="text-lg font-bold text-gray-900 mb-3">Valuation Breakdown</h2>
+            <div className="grid md:grid-cols-2 gap-3 text-xs">
+              <div className="space-y-1.5">
+                <div className="flex justify-between"><span className="font-semibold">Purchase Price:</span><span>{money(purchasePrice)}</span></div>
+                <div className="flex justify-between"><span className="font-semibold">Land Value:</span><span>{money(landVal)}</span></div>
+                <div className="flex justify-between border-t pt-1.5"><span className="font-semibold">Building Value:</span><span className="font-bold">{money(buildingValue)}</span></div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between"><span className="font-semibold">Base Quote:</span><span>{money(baseQuote)}</span></div>
+                <div className="flex justify-between"><span className="font-semibold">Rush Fee:</span><span>{form.rush !== "No Rush" ? form.rush : "None"}</span></div>
+                <div className="flex justify-between border-t pt-1.5"><span className="font-semibold">Final Quote:</span><span className="font-bold text-blue-600">{money(result.final_quote)}</span></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Key Benefits - Fixed height */}
+          <div className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-300 rounded-lg p-4" style={{ minHeight: '140px' }}>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Key Tax Benefits</h2>
+            <div className="grid md:grid-cols-2 gap-2 text-xs">
+              <div>
+                <div className="font-semibold text-green-700 mb-1">✓ Accelerated Depreciation</div>
+                <p className="text-gray-700 text-[11px]">Maximize first-year deductions</p>
+              </div>
+              <div>
+                <div className="font-semibold text-green-700 mb-1">✓ Improved Cash Flow</div>
+                <p className="text-gray-700 text-[11px]">Reduce tax liability</p>
+              </div>
+              <div>
+                <div className="font-semibold text-green-700 mb-1">✓ IRS-Compliant</div>
+                <p className="text-gray-700 text-[11px]">Engineering-based study</p>
+              </div>
+              <div>
+                <div className="font-semibold text-green-700 mb-1">✓ Professional Guarantee</div>
+                <p className="text-gray-700 text-[11px]">Full audit support included</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Validity */}
-      <div className="bg-yellow-50 border-b-2 border-yellow-300 px-8 py-3 flex justify-between items-center">
-        <div>
-          <span className="font-semibold text-gray-700">Quote Date:</span>
-          <span className="ml-2 text-gray-900">
-            {now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-          </span>
-        </div>
-        <div className="bg-red-100 border border-red-300 px-4 py-1 rounded-full">
-          <span className="font-semibold text-red-700">Valid Until:</span>
-          <span className="ml-2 text-red-900 font-bold">
-            {expires.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-          </span>
-        </div>
-      </div>
-
-      <div className="p-8 space-y-8">
-        {/* Company + Contact */}
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">Company Information</h2>
-            <div className="space-y-2 text-sm">
-              <div><span className="font-semibold">Owner:</span> {form.owner}</div>
-              <div><span className="font-semibold">Property:</span> {form.address}</div>
-              <div><span className="font-semibold">Type:</span> {form.property_type}</div>
-              <div><span className="font-semibold">Year Built:</span> {form.year_built}</div>
-              <div><span className="font-semibold">Building Area:</span> {num(form.sqft_building).toLocaleString()} sq ft</div>
-              <div><span className="font-semibold">Land Area:</span> {form.acres_land} acres</div>
+      {/* ========== PAGE 2 ========== */}
+      <div className="page-2" style={{ minHeight: '11in' }}>
+        <div className="p-6">
+          {/* Depreciation table - Controlled height */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="bg-gradient-to-r from-gray-800 to-gray-600 text-white p-3">
+              <h2 className="text-lg font-bold">27.5-Year Depreciation Schedule</h2>
+              <p className="text-xs text-gray-300 mt-0.5">Estimated Annual Depreciation Comparison</p>
             </div>
-          </div>
 
-          <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">Contact Information</h2>
-            <div className="space-y-2 text-sm">
-              <div><span className="font-semibold">Name:</span> {form.name}</div>
-              <div><span className="font-semibold">Email:</span> {form.email}</div>
-              <div><span className="font-semibold">Phone:</span> {form.phone}</div>
-              <div><span className="font-semibold">Purchase Date:</span> {form.purchase_date}</div>
-              <div><span className="font-semibold">Tax Year:</span> {form.tax_year}</div>
-              <div><span className="font-semibold">Tax Deadline:</span> {form.tax_deadline}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Fee structure */}
-        <div className="border-2 rounded-lg p-6" style={{ backgroundColor: "#e8f4f8", borderColor: "#558ca5" }}>
-          <h2 className="text-2xl font-bold mb-4" style={{ color: "#232940" }}>Professional Fee Structure</h2>
-          <div className="grid md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-lg border-2 border-green-400 shadow-sm">
-              <div className="text-sm font-semibold text-gray-600 mb-1">Pay Upfront (9% Discount)</div>
-              <div className="text-3xl font-bold text-green-600">{money(upfront)}</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg border-2 border-blue-400 shadow-sm">
-              <div className="text-sm font-semibold text-gray-600 mb-1">50/50 Split</div>
-              <div className="text-3xl font-bold text-blue-600">{money(split5050)}</div>
-              <div className="text-xs text-gray-500 mt-1">Now / Upon Completion</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg border-2 border-purple-400 shadow-sm">
-              <div className="text-sm font-semibold text-gray-600 mb-1">Pay Over Time</div>
-              <div className="text-3xl font-bold text-purple-600">{money(payOverTime)}</div>
-              <div className="text-xs text-gray-500 mt-1">Quarterly installments</div>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg">
-            <div className="text-sm text-gray-600 mb-2">Standard Fee (before discounts):</div>
-            <div className="text-2xl font-bold text-gray-900">{money(standardBeforeDiscounts)}</div>
-          </div>
-        </div>
-
-        {/* Valuation Breakdown */}
-        <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Valuation Breakdown</h2>
-          <div className="grid md:grid-cols-2 gap-4 text-sm">
-            <div className="space-y-2">
-              <div className="flex justify-between"><span className="font-semibold">Purchase Price:</span><span>{money(purchasePrice)}</span></div>
-              <div className="flex justify-between"><span className="font-semibold">Land Value:</span><span>{money(landVal)}</span></div>
-              <div className="flex justify-between border-t pt-2"><span className="font-semibold">Building Value:</span><span className="font-bold">{money(buildingValue)}</span></div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between"><span className="font-semibold">Base Quote:</span><span>{money(baseQuote)}</span></div>
-              <div className="flex justify-between"><span className="font-semibold">Rush Fee:</span><span>{form.rush !== "No Rush" ? form.rush : "None"}</span></div>
-              <div className="flex justify-between border-t pt-2"><span className="font-semibold">Final Quote:</span><span className="font-bold text-blue-600">{money(result.final_quote)}</span></div>
-            </div>
-          </div>
-        </div>
-
-        {/* Force page break for printing */}
-        <div className="page-break"></div>
-
-        {/* Depreciation table */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-gray-800 to-gray-600 text-white p-4">
-            <h2 className="text-xl font-bold">27.5-Year Depreciation Schedule</h2>
-            <p className="text-sm text-gray-300 mt-1">Estimated Annual Depreciation Comparison</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 border-b-2 border-gray-300">
-                <tr>
-                  <th className="px-4 py-3 text-left font-bold">Year</th>
-                  <th className="px-4 py-3 text-right font-bold">Cost Seg Est.</th>
-                  <th className="px-4 py-3 text-right font-bold">Std. Depreciation</th>
-                  <th className="px-4 py-3 text-right font-bold">Traditional Cost Seg</th>
-                  <th className="px-4 py-3 text-right font-bold">Bonus Depreciation</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schedule.map((r, i) => (
-                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                    <td className="px-4 py-2 font-semibold">{r.y}</td>
-                    <td className="px-4 py-2 text-right">{money(r.cs)}</td>
-                    <td className="px-4 py-2 text-right">{money(r.sd)}</td>
-                    <td className="px-4 py-2 text-right">{money(r.ts)}</td>
-                    <td className="px-4 py-2 text-right font-semibold text-green-600">{money(r.bd)}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px]">
+                <thead className="bg-gray-100 border-b-2 border-gray-300">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-bold">Year</th>
+                    <th className="px-2 py-1.5 text-right font-bold">Cost Seg Est.</th>
+                    <th className="px-2 py-1.5 text-right font-bold">Std. Depreciation</th>
+                    <th className="px-2 py-1.5 text-right font-bold">Traditional Cost Seg</th>
+                    <th className="px-2 py-1.5 text-right font-bold">Bonus Depreciation</th>
                   </tr>
-                ))}
-                <tr className="bg-blue-100 border-t-2 border-blue-300 font-bold">
-                  <td className="px-4 py-3">TOTALS</td>
-                  <td className="px-4 py-3 text-right">{money(tots.cs)}</td>
-                  <td className="px-4 py-3 text-right">{money(tots.sd)}</td>
-                  <td className="px-4 py-3 text-right">{money(tots.ts)}</td>
-                  <td className="px-4 py-3 text-right text-green-700">{money(tots.bd)}</td>
-                </tr>
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {schedule.map((r, i) => (
+                    <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      <td className="px-2 py-1 font-semibold">{r.y}</td>
+                      <td className="px-2 py-1 text-right">{money(r.cs)}</td>
+                      <td className="px-2 py-1 text-right">{money(r.sd)}</td>
+                      <td className="px-2 py-1 text-right">{money(r.ts)}</td>
+                      <td className="px-2 py-1 text-right font-semibold text-green-600">{money(r.bd)}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-blue-100 border-t-2 border-blue-300 font-bold">
+                    <td className="px-2 py-2">TOTALS</td>
+                    <td className="px-2 py-2 text-right">{money(tots.cs)}</td>
+                    <td className="px-2 py-2 text-right">{money(tots.sd)}</td>
+                    <td className="px-2 py-2 text-right">{money(tots.ts)}</td>
+                    <td className="px-2 py-2 text-right text-green-700">{money(tots.bd)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Footer + Print button */}
+          <div className="text-center space-y-2 mt-6">
+            <button
+              onClick={() => window.print()}
+              className="no-print text-white font-bold py-2 px-6 rounded-lg shadow-lg transition"
+              style={{ backgroundColor: "#558ca5" }}
+            >
+              Print or Save as PDF
+            </button>
+            <p className="text-xs text-gray-600">This quote is valid for 30 days from the quote date above</p>
           </div>
         </div>
 
-        {/* Footer + Print button */}
-        <div className="text-center space-y-3">
-          <button
-            onClick={() => window.print()}
-            className="no-print text-white font-bold py-3 px-8 rounded-lg shadow-lg transition"
-            style={{ backgroundColor: "#558ca5" }}
-          >
-            Print or Save as PDF
-          </button>
-          <p className="text-sm text-gray-600">This quote is valid for 30 days from the quote date above</p>
+        {/* Footer */}
+        <div className="bg-gray-100 border-t-2 border-gray-300 p-4 text-center text-[10px] text-gray-600 mt-auto">
+          <p className="font-semibold">Quote Generated: {now.toLocaleDateString()}</p>
+          <p className="mt-0.5 text-red-600 font-semibold">Valid Until: {expires.toLocaleDateString()} (30 days)</p>
+          <p className="mt-2 text-gray-500">RCG Valuation • Cost Segregation Specialists</p>
         </div>
-      </div>
-
-      <div className="bg-gray-100 border-t-2 border-gray-300 p-6 text-center text-xs text-gray-600">
-        <p className="font-semibold">Quote Generated: {now.toLocaleDateString()}</p>
-        <p className="mt-1 text-red-600 font-semibold">Valid Until: {expires.toLocaleDateString()} (30 days)</p>
-        <p className="mt-3 text-gray-500">RCG Valuation • Cost Segregation Specialists</p>
       </div>
     </div>
   );
