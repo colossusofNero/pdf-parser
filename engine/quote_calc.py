@@ -174,7 +174,7 @@ class QuoteCalculator:
         )
         return round(final_fee, 2), parts
 
-     # ---------- document helpers ----------
+    # ---------- document helpers ----------
 
     def _payment_block(self, original: float, rush_fee: float = 0.0) -> Dict:
         upfront = round(original * 0.909, 2)
@@ -239,7 +239,14 @@ class QuoteCalculator:
         """
         addr = inputs.get("address") or "123 Main St, Yourtown, US, 85260"
         due_label = f"{(inputs.get('tax_deadline') or 'October')} {(inputs.get('tax_year') or '2025')}"
+        
+        # FIX: Convert purchase_date to string
         purchase = inputs.get("purchase_date") or "03/15/2024"
+        if hasattr(purchase, 'isoformat'):  # If it's a date object
+            purchase = purchase.isoformat()  # Convert to string format YYYY-MM-DD
+        else:
+            purchase = str(purchase)  # Otherwise just convert to string
+        
         sqft = inputs.get("sqft_building") or None
         acres = inputs.get("acres_land") or None
 
