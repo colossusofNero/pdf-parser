@@ -1,35 +1,27 @@
 ﻿/* Tailwind v4 */
 @import "tailwindcss";
 
-/* ===== Print rules ===== */
+/* Print styles - simplified */
 @media print {
-  /* Only print the quote card */
-  body * { visibility: hidden !important; }
-  #quote-pdf, #quote-pdf * { visibility: visible !important; }
-  #quote-pdf { position: absolute; left: 0; top: 0; width: 100%; }
-
-  /* Hide any non-print UI */
-  .no-print { display: none !important; }
-
-  /* Page setup */
-  @page {
-    size: Letter;     /* change to A4 if you prefer */
-    margin: 0.5in;
+  /* Hide everything except the PDF */
+  .no-print {
+    display: none !important;
   }
-
-  /* Avoid ugly splits */
-  .pdf-display, .card, .panel, .box, table, tr, td, th { break-inside: avoid; }
-  .page-break { break-after: page; }
-
-  /* Preserve colors */
-  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-}
-
-/* Tweak scale to hit exactly 2 pages (adjust 0.90–1.00 as needed) */
-@media print {
-  #quote-pdf {
-    transform: scale(0.95);
-    transform-origin: top left;
-    width: calc(100% / 0.95);
+  
+  /* Show only the quote PDF */
+  body {
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Force page breaks */
+  .page-1 {
+    page-break-after: always;
+  }
+  
+  /* Keep colors when printing */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }

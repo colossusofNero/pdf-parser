@@ -1,3 +1,4 @@
+# service/api.py
 from __future__ import annotations
 
 import os, json
@@ -7,14 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from engine.quote_calc import QuoteCalculator
-from .schemas import QuoteInputs, QuoteResult, QuoteDoc 
+from .schemas import QuoteInputs, QuoteResult, QuoteDoc
 
 # -------- App & engine setup --------
-import os
 
-# Get the directory where this file is located
+# Directory two levels up from this file (repo root / project src root)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-XLSX_PATH = os.path.join(BASE_DIR, "Base Pricing27.1_Pro_SMART_RCGV.xlsx")
+
+# Allow env override; otherwise expect the workbook at repo root with exact name/case
+# e.g. set WORKBOOK_PATH=/opt/render/project/src/assets/BasePricing_27_1_Pro_SMART_RCGV.xlsx on Render
+XLSX_PATH = os.environ.get("WORKBOOK_PATH") or os.path.join(BASE_DIR, "Base Pricing27.1_Pro_SMART_RCGV.xlsx")
+
 calc = QuoteCalculator(XLSX_PATH)
 
 app = FastAPI(title="RCGV Quote Tools", version="1.0")
@@ -25,6 +29,21 @@ app.add_middleware(
 
 # In-memory draft (swap to Supabase later)
 CURRENT_DRAFT: Dict[str, Any] = {}
+
+# -------- Debug (temporary) --------
+@app.get("/debug/xlsx")
+def debug_xlsx():
+    """Check where the app is looking for the workbook in this runtime."""
+    try:
+        return {
+            "cwd": os.getcwd(),
+            "base_dir": BASE_DIR,
+            "xlsx_path": XLSX_PATH,
+            "exists": os.path.exists(XLSX_PATH),
+            "base_listing": sorted(os.listdir(BASE_DIR)),
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 # -------- Quote API --------
 @app.post("/quote/set_inputs")
@@ -273,11 +292,17 @@ def quote_document(inp: QuoteInputs):
         price_override=inp.price_override
     )
 
-    payload = calc.build_quote_doc(
-        inputs=_to_dict(inp),                            # <-- use helper
-        final_quote_amount=final,
-        rush_fee=parts.get("rush_fee", 0.0)
-    )
+    try:
+        payload = calc.build_quote_doc(
+            inputs=_to_dict(inp),
+            final_quote_amount=final,
+            rush_fee=parts.get("rush_fee", 0.0)
+        )
+    except Exception as e:
+        # Return a readable message including the path we attempted
+        raise HTTPException(status_code=500, detail=f"/quote/document failed: {e}; XLSX_PATH={XLSX_PATH}")
+
+    # Inject contact block
     payload["rcg_contact_name"] = "Scott Roelofs"
     payload["rcg_contact_office"] = "331.248.7245"
     payload["rcg_contact_cell"]   = "480.276.5626"

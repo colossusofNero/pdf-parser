@@ -33,10 +33,17 @@ const EXAMPLE = {
   price_override: ""
 };
 
+// ✅ UPDATED: Money formatter - no cents
 const money = (n) =>
   isFinite(n)
-    ? n.toLocaleString(undefined, { style: "currency", currency: "USD" })
-    : "$0.00";
+    ? n.toLocaleString(undefined, { 
+        style: "currency", 
+        currency: "USD",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      })
+    : "$0";
+
 const num = (v) => Number(String(v ?? "").replace(/[$,]/g, "")) || 0;
 const pct = (v) => {
   const n = Number(String(v ?? "").replace(/[%]/g, ""));
@@ -81,10 +88,10 @@ async function compute() {
       floors: parseInt(form.floors),
       multiple_properties: parseInt(form.multiple_properties),
       purchase_date: form.purchase_date ? form.purchase_date : null,
-      capex_date: form.capex === "Yes" && form.capex_date ? form.capex_date : null,
       tax_year: parseInt(form.tax_year),
       capex: form.capex,
-      capex_date: form.capex_date || null,  // ← Fix: send null if empty
+      capex_amount: form.capex === "Yes" ? num(form.capex_amount) : 0,
+      capex_date: form.capex === "Yes" && form.capex_date ? form.capex_date : null,
       is_1031: form.is_1031,
       pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
     };
@@ -607,7 +614,7 @@ function PDFDisplay({ result, form }) {
   // Use the payments object from the API response
   const payments = result.payments || {};
   const baseQuote = payments.originally_quoted || 0;
-  const finalQuote = baseQuote; // Can be adjusted if needed
+  const finalQuote = baseQuote;
 
   const seasonal = (() => {
     const m = now.getMonth() + 1, d = now.getDate();
@@ -624,7 +631,7 @@ function PDFDisplay({ result, form }) {
   const payOverTime = (payments.pay_over_time_amount || baseQuote / 4) * disc;
   const standardBeforeDiscounts = baseQuote * disc;
 
-  // Use schedule from API response, or fallback to empty array
+  // Use schedule from API response
   const schedule = result.schedule || [];
   
   const tots = schedule.reduce((a, r) => ({
@@ -669,7 +676,7 @@ function PDFDisplay({ result, form }) {
         </div>
 
         <div className="p-4 space-y-3">
-          {/* Company + Contact - COMBINED in single row */}
+          {/* Company + Contact */}
           <div className="grid md:grid-cols-2 gap-3">
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
               <h2 className="text-sm font-bold text-gray-900 mb-2 border-b pb-1">Company Information</h2>
@@ -696,7 +703,7 @@ function PDFDisplay({ result, form }) {
             </div>
           </div>
 
-          {/* Fee structure + Valuation Breakdown - COMBINED */}
+          {/* Fee structure + Valuation Breakdown */}
           <div className="grid md:grid-cols-2 gap-3">
             {/* Fee Structure */}
             <div className="border-2 rounded-lg p-3" style={{ backgroundColor: "#e8f4f8", borderColor: "#558ca5" }}>
@@ -723,7 +730,7 @@ function PDFDisplay({ result, form }) {
               </div>
             </div>
 
-            {/* Valuation Breakdown - HIGHLIGHT VALUE */}
+            {/* Valuation Breakdown */}
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
               <h2 className="text-sm font-bold text-gray-900 mb-2">Valuation Breakdown</h2>
               <div className="space-y-1.5 text-[10px]">
@@ -746,7 +753,7 @@ function PDFDisplay({ result, form }) {
             </div>
           </div>
 
-          {/* Key Benefits - MORE COMPACT */}
+          {/* Key Benefits */}
           <div className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-400 rounded-lg p-3">
             <h2 className="text-sm font-bold text-gray-900 mb-2">Why Cost Segregation?</h2>
             <div className="grid md:grid-cols-4 gap-2 text-[10px]">
@@ -774,7 +781,7 @@ function PDFDisplay({ result, form }) {
       {/* ========== PAGE 2 ========== */}
       <div className="page-2" style={{ minHeight: '11in' }}>
         <div className="p-4">
-          {/* Depreciation table - EMPHASIZE YOUR VALUE */}
+          {/* Depreciation table */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="bg-gradient-to-r from-gray-800 to-gray-600 text-white p-2">
               <h2 className="text-base font-bold">27.5-Year Depreciation Schedule</h2>
