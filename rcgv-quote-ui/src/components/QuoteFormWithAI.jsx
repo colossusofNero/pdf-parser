@@ -60,51 +60,49 @@ export default function QuoteFormWithAI() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  async function compute() {
-    setBusy(true);
-    setErr("");
-    setResult(null);
-    try {
-      const knownLand = form.land_mode === "dollars";
-      const payload = {
-        purchase_price: num(form.purchase_price),
-        zip_code: parseInt(form.zip_code || "0", 10),
-        land_value: knownLand ? num(form.land_value) : pct(form.land_value),
-        known_land_value: knownLand,
-        rush: form.rush,
-        premium: "No",
-        referral: "No",
-        price_override: form.price_override ? num(form.price_override) : 0,
-        // Include all form fields for schedule calculation
-        property_type: form.property_type,
-        sqft_building: num(form.sqft_building),
-        acres_land: parseFloat(form.acres_land),
-        floors: parseInt(form.floors),
-        multiple_properties: parseInt(form.multiple_properties),
-        purchase_date: form.purchase_date,
-        tax_year: parseInt(form.tax_year),
-        capex: form.capex,
-        capex_amount: form.capex === "Yes" ? num(form.capex_amount) : 0,
-        capex_date: form.capex_date,
-        is_1031: form.is_1031,
-        pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
-      };
+async function compute() {
+  setBusy(true);
+  setErr("");
+  setResult(null);
+  try {
+    const knownLand = form.land_mode === "dollars";
+    const payload = {
+      purchase_price: num(form.purchase_price),
+      zip_code: parseInt(form.zip_code || "0", 10),
+      land_value: knownLand ? num(form.land_value) : pct(form.land_value),
+      known_land_value: knownLand,
+      rush: form.rush,
+      premium: "No",
+      referral: "No",
+      price_override: form.price_override ? num(form.price_override) : 0,
+      property_type: form.property_type,
+      sqft_building: num(form.sqft_building),
+      acres_land: parseFloat(form.acres_land),
+      floors: parseInt(form.floors),
+      multiple_properties: parseInt(form.multiple_properties),
+      purchase_date: form.purchase_date ? form.purchase_date : null,
+      capex_date: form.capex === "Yes" && form.capex_date ? form.capex_date : null,
+      tax_year: parseInt(form.tax_year),
+      capex: form.capex,
+      capex_date: form.capex_date || null,  // ← Fix: send null if empty
+      is_1031: form.is_1031,
+      pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
+    };
 
-      // Call the /quote/document endpoint to get the full schedule
-      const r = await fetch(`${apiBase}/quote/document`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const text = await r.text();
-      if (!r.ok) throw new Error(text || `HTTP ${r.status}`);
-      setResult(JSON.parse(text));
-    } catch (e) {
-      setErr(String(e.message || e));
-    } finally {
-      setBusy(false);
-    }
+    const r = await fetch(`${apiBase}/quote/document`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(text || `HTTP ${r.status}`);
+    setResult(JSON.parse(text));
+  } catch (e) {
+    setErr(String(e.message || e));
+  } finally {
+    setBusy(false);
   }
+}
 
   async function sendAi() {
     const content = aiInput.trim();
