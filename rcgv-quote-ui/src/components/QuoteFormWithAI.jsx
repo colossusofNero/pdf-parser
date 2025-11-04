@@ -778,10 +778,12 @@ function PDFDisplay({ result, form }) {
         </div>
       </div>
 
+      // In your QuoteFormWithAI.jsx file, replace the page-2 div section with this:
+
       {/* ========== PAGE 2 ========== */}
-      <div className="page-2" style={{ minHeight: '11in' }}>
+      <div className="page-2" style={{ minHeight: '0' }}>
         <div className="p-4">
-          {/* Depreciation table */}
+          {/* Depreciation table - LIMIT TO 28 ROWS MAX */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="bg-gradient-to-r from-gray-800 to-gray-600 text-white p-2">
               <h2 className="text-base font-bold">27.5-Year Depreciation Schedule</h2>
@@ -799,7 +801,8 @@ function PDFDisplay({ result, form }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {schedule.map((r, i) => (
+                  {/* CRITICAL: Only show first 28 rows to fit on one page */}
+                  {schedule.slice(0, 28).map((r, i) => (
                     <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                       <td className="px-2 py-0.5 font-semibold">{r.year}</td>
                       <td className="px-2 py-0.5 text-right text-gray-500">{money(r.std_dep)}</td>
