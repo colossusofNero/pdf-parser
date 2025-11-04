@@ -456,11 +456,10 @@ class QuoteCalculator:
     def build_quote_doc(self, inputs: Dict, final_quote_amount: float, rush_fee: float = 0.0) -> Dict:
         """
         Returns a dict for the frontend PDF-like renderer (header + payments + schedule).
-        Round to whole dollars for cleaner display.
+        Deterministic cents rounding via Decimal to prevent float drift.
         """
-        def q0(x) -> Decimal:
-            """Round to whole dollars (0 decimal places)"""
-            return Decimal(str(x or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        def q2(x) -> Decimal:
+            return Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         addr = inputs.get("address") or "123 Main St, Yourtown, US, 85260"
         due_label = f"{(inputs.get('tax_deadline') or 'October')} {(inputs.get('tax_year') or '2025')}"
@@ -482,19 +481,19 @@ class QuoteCalculator:
 
         payments = self._payment_block(final_quote_amount, rush_fee=rush_fee)
 
-        # Build schedule and round each cell to whole dollars
+        # Build schedule and quantize each cell to cents
         sched_df = self._find_schedule_table()
         schedule = []
         for r in sched_df.itertuples():
             schedule.append({
                 "year": int(getattr(r, "year")),
-                "cost_seg_est": float(q0(getattr(r, "cost_seg_est", 0.0))),
-                "std_dep":       float(q0(getattr(r, "std_dep",       0.0))),
-                "trad_cost_seg": float(q0(getattr(r, "trad_cost_seg", 0.0))),
-                "bonus_dep":     float(q0(getattr(r, "bonus_dep",     0.0))),
+                "cost_seg_est": float(q2(getattr(r, "cost_seg_est", 0.0))),
+                "std_dep":       float(q2(getattr(r, "std_dep",       0.0))),
+                "trad_cost_seg": float(q2(getattr(r, "trad_cost_seg", 0.0))),
+                "bonus_dep":     float(q2(getattr(r, "bonus_dep",     0.0))),
             })
 
-        # Read totals from Excel and round to whole dollars
+        # Read totals from Excel
         wb = load_workbook(self.xlsx_path, data_only=True)
         ws = wb["Printable Quote"]
         
@@ -502,19 +501,19 @@ class QuoteCalculator:
         h49_val = ws["H49"].value
         i49_val = ws["I49"].value
         
-        total_std_dep = float(q0(self._to_num(g49_val)))
-        total_trad_cost_seg = float(q0(self._to_num(h49_val)))
-        total_cost_seg_est = float(q0(self._to_num(i49_val if i49_val is not None else h49_val)))
+        total_std_dep = float(q2(self._to_num(g49_val)))
+        total_trad_cost_seg = float(q2(self._to_num(h49_val)))
+        total_cost_seg_est = float(q2(self._to_num(i49_val if i49_val is not None else h49_val)))
 
         return {
-            "rounding_version": "dollar_v1",  # Changed from decimal_v1
+            "rounding_version": "decimal_v1",
             "company": inputs.get("prospect_name") or "Valued Client",
             "property_label": inputs.get("property_type") or "Multi-Family",
             "property_address": inputs.get("address") or "123 Main St, Yourtown, US, 85260",
-            "purchase_price": float(q0(pp)),
-            "capex_amount": float(q0(inputs.get("capex_amount") or 0.0)),
-            "building_value": float(q0(bldg_v)),
-            "land_value": float(q0(land_amt)),
+            "purchase_price": float(q2(pp)),
+            "capex_amount": float(q2(inputs.get("capex_amount") or 0.0)),
+            "building_value": float(q2(bldg_v)),
+            "land_value": float(q2(land_amt)),
             "purchase_date": purchase,
             "sqft_building": inputs.get("sqft_building") or None,
             "acres_land": inputs.get("acres_land") or None,
