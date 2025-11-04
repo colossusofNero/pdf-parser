@@ -777,7 +777,6 @@ function PDFDisplay({ result, form }) {
           </div>
         </div>
       </div>
-
       {/* ========== PAGE 2 ========== */}
       <div className="page-2" style={{ minHeight: '0' }}>
         <div className="p-4">
