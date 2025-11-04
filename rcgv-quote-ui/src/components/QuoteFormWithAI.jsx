@@ -778,8 +778,6 @@ function PDFDisplay({ result, form }) {
         </div>
       </div>
 
-      // In your QuoteFormWithAI.jsx file, replace the page-2 div section with this:
-
       {/* ========== PAGE 2 ========== */}
       <div className="page-2" style={{ minHeight: '0' }}>
         <div className="p-4">

@@ -26,11 +26,24 @@
     margin: 0;
   }
   
-  /* Force page 1 break */
+  /* Force page 1 break and maintain grid layout */
   .page-1 {
     page-break-after: always;
-    page-break-inside: avoid; /* ✅ NEW: Prevent breaking content inside page 1 */
-    min-height: 0 !important; /* ✅ NEW: Remove min-height constraint */
+    page-break-inside: avoid;
+    min-height: 0 !important;
+  }
+  
+  /* Force grid layouts to stay side-by-side when printing */
+  .page-1 .grid {
+    display: grid !important;
+  }
+  
+  .page-1 .md\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  
+  .page-1 .md\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   }
   
   /* ✅ NEW: Prevent page 2 from creating extra pages */
