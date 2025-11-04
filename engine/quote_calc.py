@@ -498,11 +498,17 @@ class QuoteCalculator:
             wb = load_workbook(self.xlsx_path, data_only=True)
             ws = wb["Printable Quote"]
             
-            # Read totals from row 49 (adjust row number if different in your workbook)
-            total_std_dep = float(q2(self._to_num(ws["G49"].value)))
-            total_trad_cost_seg = float(q2(self._to_num(ws["H49"].value)))
-            total_cost_seg_est = float(q2(self._to_num(ws["I49"].value)))
-        except Exception:
+            # Read from row 49 (G=Std Dep, H=Trad Cost Seg, I=Bonus Dep)
+            g49_val = ws["G49"].value
+            h49_val = ws["H49"].value
+            i49_val = ws["I49"].value
+            
+            # Convert to numbers
+            total_std_dep = float(q2(self._to_num(g49_val)))
+            total_trad_cost_seg = float(q2(self._to_num(h49_val)))
+            total_cost_seg_est = float(q2(self._to_num(i49_val if i49_val is not None else h49_val)))
+            
+        except Exception as e:
             # Fallback: compute totals from schedule if Excel read fails
             total_cost_seg_est = float(q2(sum(Decimal(str(r["cost_seg_est"]))  for r in schedule)))
             total_std_dep = float(q2(sum(Decimal(str(r["std_dep"]))       for r in schedule)))
@@ -527,7 +533,6 @@ class QuoteCalculator:
             "total_std_dep": total_std_dep,
             "total_trad_cost_seg": total_trad_cost_seg,
         }
-
 
 # ---------- quick manual test ----------
 if __name__ == "__main__":
