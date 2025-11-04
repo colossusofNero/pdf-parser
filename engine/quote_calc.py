@@ -252,7 +252,19 @@ class QuoteCalculator:
                 })
                 r += 1
 
-            return pd.DataFrame(rows)
+            # ✅ NEW: Read totals from Excel cells instead of calculating
+            # Assuming totals are in row 49 (adjust if different)
+            total_std_dep = to_num(ws["G49"].value)
+            total_trad = to_num(ws["H49"].value)
+            total_bonus = to_num(ws["I49"].value)
+            
+            df = pd.DataFrame(rows)
+            # Store totals as metadata on the DataFrame
+            df.attrs['total_std_dep'] = total_std_dep
+            df.attrs['total_trad_cost_seg'] = total_trad
+            df.attrs['total_bonus_dep'] = total_bonus
+            
+            return df
         except Exception:
             return pd.DataFrame(columns=["year", "cost_seg_est", "std_dep", "trad_cost_seg", "bonus_dep"])
 
@@ -481,10 +493,20 @@ class QuoteCalculator:
                 "bonus_dep":     float(q2(getattr(r, "bonus_dep",     0.0))),
             })
 
-        # Totals computed from already-quantized numbers (still quantize again for safety)
-        total_cost_seg_est = float(q2(sum(Decimal(str(r["cost_seg_est"]))  for r in schedule)))
-        total_std_dep       = float(q2(sum(Decimal(str(r["std_dep"]))       for r in schedule)))
-        total_trad_cost_seg = float(q2(sum(Decimal(str(r["trad_cost_seg"])) for r in schedule)))
+        # ✅ Read totals directly from Excel cells G49, H49, I49
+        try:
+            wb = load_workbook(self.xlsx_path, data_only=True)
+            ws = wb["Printable Quote"]
+            
+            # Read totals from row 49 (adjust row number if different in your workbook)
+            total_std_dep = float(q2(self._to_num(ws["G49"].value)))
+            total_trad_cost_seg = float(q2(self._to_num(ws["H49"].value)))
+            total_cost_seg_est = float(q2(self._to_num(ws["I49"].value)))
+        except Exception:
+            # Fallback: compute totals from schedule if Excel read fails
+            total_cost_seg_est = float(q2(sum(Decimal(str(r["cost_seg_est"]))  for r in schedule)))
+            total_std_dep = float(q2(sum(Decimal(str(r["std_dep"]))       for r in schedule)))
+            total_trad_cost_seg = float(q2(sum(Decimal(str(r["trad_cost_seg"])) for r in schedule)))
 
         return {
             "rounding_version": "decimal_v1",
