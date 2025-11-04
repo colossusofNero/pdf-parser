@@ -14,9 +14,30 @@
     padding: 0;
   }
   
-  /* Force page breaks */
+  /* ✅ NEW: Set page size and margins */
+  @page {
+    size: letter;
+    margin: 0.5in;
+  }
+  
+  /* ✅ NEW: Remove min-height from pages to prevent extra space */
+  .pdf-display {
+    box-shadow: none;
+    margin: 0;
+  }
+  
+  /* Force page 1 break */
   .page-1 {
     page-break-after: always;
+    page-break-inside: avoid; /* ✅ NEW: Prevent breaking content inside page 1 */
+    min-height: 0 !important; /* ✅ NEW: Remove min-height constraint */
+  }
+  
+  /* ✅ NEW: Prevent page 2 from creating extra pages */
+  .page-2 {
+    page-break-inside: avoid;
+    page-break-after: avoid;
+    min-height: 0 !important;
   }
   
   /* Keep colors when printing */
