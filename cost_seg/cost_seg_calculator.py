@@ -4,7 +4,7 @@ Handles MACRS depreciation with bonus depreciation and 481(a) adjustments
 """
 
 from datetime import datetime
-from macrs_tables import get_macrs_percentage, get_accumulated_depreciation
+from .macrs_tables import get_macrs_percentage, get_accumulated_depreciation
 import math
 
 # Bonus Depreciation Schedule
