@@ -1,4 +1,4 @@
-# service/api.py
+# service/api.py - COMPLETE FILE
 from __future__ import annotations
 
 import os, json
@@ -8,17 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from engine.quote_calc import QuoteCalculator
-from .schemas import QuoteInputs, QuoteResult, QuoteDoc
+from .schemas import QuoteInputs, QuoteResult, QuoteDoc 
 
 # -------- App & engine setup --------
-
-# Directory two levels up from this file (repo root / project src root)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# Allow env override; otherwise expect the workbook at repo root with exact name/case
-# e.g. set WORKBOOK_PATH=/opt/render/project/src/assets/BasePricing_27_1_Pro_SMART_RCGV.xlsx on Render
-XLSX_PATH = os.environ.get("WORKBOOK_PATH") or os.path.join(BASE_DIR, "Base Pricing27.1_Pro_SMART_RCGV.xlsx")
-
+XLSX_PATH = r"C:\Users\scott\Claude_Code\Online_quote_RCGV\Base Pricing27.1_Pro_SMART_RCGV.xlsx"  # adjust if needed
 calc = QuoteCalculator(XLSX_PATH)
 
 app = FastAPI(title="RCGV Quote Tools", version="1.0")
@@ -29,21 +22,6 @@ app.add_middleware(
 
 # In-memory draft (swap to Supabase later)
 CURRENT_DRAFT: Dict[str, Any] = {}
-
-# -------- Debug (temporary) --------
-@app.get("/debug/xlsx")
-def debug_xlsx():
-    """Check where the app is looking for the workbook in this runtime."""
-    try:
-        return {
-            "cwd": os.getcwd(),
-            "base_dir": BASE_DIR,
-            "xlsx_path": XLSX_PATH,
-            "exists": os.path.exists(XLSX_PATH),
-            "base_listing": sorted(os.listdir(BASE_DIR)),
-        }
-    except Exception as e:
-        return {"error": str(e)}
 
 # -------- Quote API --------
 @app.post("/quote/set_inputs")
@@ -62,6 +40,10 @@ def get_inputs():
 
 @app.post("/quote/compute", response_model=QuoteResult)
 def compute_quote(inp: QuoteInputs):
+    """
+    Quick computation endpoint - returns just the fee breakdown.
+    Does NOT update Excel or generate full document.
+    """
     base, _parts = calc.nat_log_quote(
         purchase_price=inp.purchase_price,
         land_value=inp.land_value,
@@ -87,6 +69,52 @@ def save_draft():
 @app.get("/quote/load_draft")
 def load_draft():
     return {"ok": True, "draft": CURRENT_DRAFT}
+
+# ---- helper for pydantic v1/v2 ----
+def _to_dict(m: BaseModel) -> Dict[str, Any]:
+    return m.model_dump() if hasattr(m, "model_dump") else m.dict()
+
+# ---- Quote document route ----
+@app.post("/quote/document", response_model=QuoteDoc)
+def quote_document(inp: QuoteInputs):
+    """
+    Full quote document generation.
+    
+    This endpoint:
+    1. Computes the quote fees
+    2. Writes inputs to Excel 'Input Sheet'
+    3. Reads computed values from 'Printable Quote'
+    4. Returns complete document including depreciation schedule
+    """
+    base, _ = calc.nat_log_quote(
+        purchase_price=inp.purchase_price,
+        land_value=inp.land_value,
+        known_land_value=inp.known_land_value,
+        zip_code=inp.zip_code
+    )
+    final, parts = calc.final_quote(
+        purchase_price=inp.purchase_price,
+        land_value=inp.land_value,
+        known_land_value=inp.known_land_value,
+        zip_code=inp.zip_code,
+        rush_label=inp.rush,
+        premium=inp.premium,
+        referral=inp.referral,
+        price_override=inp.price_override
+    )
+
+    payload = calc.build_quote_doc(
+        inputs=_to_dict(inp),                            # <-- use helper
+        final_quote_amount=final,
+        rush_fee=parts.get("rush_fee", 0.0)
+    )
+    payload["rcg_contact_name"] = "Scott Roelofs"
+    payload["rcg_contact_office"] = "331.248.7245"
+    payload["rcg_contact_cell"]   = "480.276.5626"
+    payload["rcg_contact_email"]  = "info@rcgvaluation.com"
+    payload["rcg_contact_site"]   = "rcgvaluation.com"
+    payload["rcg_address"]        = "6929 N Hayden Rd Suite C4-494, Scottsdale, AZ 85250"
+    return payload
 
 # -------- AgentKit + ChatKit (lazy OpenAI client) --------
 from openai import OpenAI
@@ -153,7 +181,7 @@ TOOLS = [
     }
 ]
 
-SYSTEM_PROMPT = """You are RCGV’s quoting assistant for cost segregation.
+SYSTEM_PROMPT = """You are RCGV's quoting assistant for cost segregation.
 
 Workflow:
 1) If you have purchase_price, zip_code, land_value, known_land_value → call quote_compute.
@@ -165,7 +193,7 @@ Response format (always):
 - A compact breakdown list:
   - Cost basis, cb_factor, zip_factor
   - Adjustments (Rush, Premium %, Referral %, Override if present)
-- A single follow-up question like: “Want to toggle Rush (No Rush / 4W $500 / 2W $1000) or Premium (Yes/No)?”
+- A single follow-up question like: "Want to toggle Rush (No Rush / 4W $500 / 2W $1000) or Premium (Yes/No)?"
 
 Rules:
 - If land is a percent, set known_land_value=False; if a dollar value, set known_land_value=True.
@@ -266,47 +294,13 @@ def envcheck():
 
 @app.get("/")
 def root():
-    return {"ok": True, "service": "RCGV Quote API", "docs": "/docs", "chat": "/agent/chat"}
-
-# ---- helper for pydantic v1/v2 ----
-def _to_dict(m: BaseModel) -> Dict[str, Any]:
-    return m.model_dump() if hasattr(m, "model_dump") else m.dict()
-
-# ---- Quote document route ----
-@app.post("/quote/document", response_model=QuoteDoc)
-def quote_document(inp: QuoteInputs):
-    base, _ = calc.nat_log_quote(
-        purchase_price=inp.purchase_price,
-        land_value=inp.land_value,
-        known_land_value=inp.known_land_value,
-        zip_code=inp.zip_code
-    )
-    final, parts = calc.final_quote(
-        purchase_price=inp.purchase_price,
-        land_value=inp.land_value,
-        known_land_value=inp.known_land_value,
-        zip_code=inp.zip_code,
-        rush_label=inp.rush,
-        premium=inp.premium,
-        referral=inp.referral,
-        price_override=inp.price_override
-    )
-
-    try:
-        payload = calc.build_quote_doc(
-            inputs=_to_dict(inp),
-            final_quote_amount=final,
-            rush_fee=parts.get("rush_fee", 0.0)
-        )
-    except Exception as e:
-        # Return a readable message including the path we attempted
-        raise HTTPException(status_code=500, detail=f"/quote/document failed: {e}; XLSX_PATH={XLSX_PATH}")
-
-    # Inject contact block
-    payload["rcg_contact_name"] = "Scott Roelofs"
-    payload["rcg_contact_office"] = "331.248.7245"
-    payload["rcg_contact_cell"]   = "480.276.5626"
-    payload["rcg_contact_email"]  = "info@rcgvaluation.com"
-    payload["rcg_contact_site"]   = "rcgvaluation.com"
-    payload["rcg_address"]        = "6929 N Hayden Rd Suite C4-494, Scottsdale, AZ 85250"
-    return payload
+    return {
+        "ok": True,
+        "service": "RCGV Quote API",
+        "docs": "/docs",
+        "endpoints": {
+            "quick_compute": "/quote/compute (fee calc only)",
+            "full_document": "/quote/document (Excel integration + schedule)",
+            "chat": "/agent/chat"
+        }
+    }

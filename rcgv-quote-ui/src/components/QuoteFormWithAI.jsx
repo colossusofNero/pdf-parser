@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "../lib/supabase";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -56,8 +57,11 @@ export default function QuoteFormWithAI() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
+  const [quoteId, setQuoteId] = useState(null); // Track the saved quote ID
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  // AI
+  // AI state - keep your existing AI code
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMsgs, setAiMsgs] = useState([]);
   const [aiInput, setAiInput] = useState("");
@@ -67,49 +71,159 @@ export default function QuoteFormWithAI() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-async function compute() {
-  setBusy(true);
-  setErr("");
-  setResult(null);
-  try {
-    const knownLand = form.land_mode === "dollars";
-    const payload = {
-      purchase_price: num(form.purchase_price),
-      zip_code: parseInt(form.zip_code || "0", 10),
-      land_value: knownLand ? num(form.land_value) : pct(form.land_value),
-      known_land_value: knownLand,
-      rush: form.rush,
-      premium: "No",
-      referral: "No",
-      price_override: form.price_override ? num(form.price_override) : 0,
-      property_type: form.property_type,
-      sqft_building: num(form.sqft_building),
-      acres_land: parseFloat(form.acres_land),
-      floors: parseInt(form.floors),
-      multiple_properties: parseInt(form.multiple_properties),
-      purchase_date: form.purchase_date ? form.purchase_date : null,
-      tax_year: parseInt(form.tax_year),
-      capex: form.capex,
-      capex_amount: form.capex === "Yes" ? num(form.capex_amount) : 0,
-      capex_date: form.capex === "Yes" && form.capex_date ? form.capex_date : null,
-      is_1031: form.is_1031,
-      pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
-    };
+  async function saveQuoteToSupabase(quoteData, quoteResult, status = 'draft') {
+    try {
+      const payload = {
+        name: quoteData.name || null,
+        email: quoteData.email || null,
+        phone: quoteData.phone || null,
+        owner: quoteData.owner || null,
+        address: quoteData.address || null,
+        zip_code: quoteData.zip_code || null,
+        property_type: quoteData.property_type || null,
+        year_built: quoteData.year_built || null,
+        sqft_building: quoteData.sqft_building || null,
+        acres_land: quoteData.acres_land || null,
+        floors: quoteData.floors || null,
+        multiple_properties: quoteData.multiple_properties || null,
+        purchase_price: quoteData.purchase_price || null,
+        purchase_date: quoteData.purchase_date || null,
+        tax_year: quoteData.tax_year || null,
+        tax_deadline: quoteData.tax_deadline || null,
+        land_mode: quoteData.land_mode || null,
+        land_value: quoteData.land_value || null,
+        capex: quoteData.capex || null,
+        capex_date: quoteData.capex_date || null,
+        capex_amount: quoteData.capex_amount || null,
+        is_1031: quoteData.is_1031 || null,
+        pad_deferred_growth: quoteData.pad_deferred_growth || null,
+        rush: quoteData.rush || null,
+        price_override: quoteData.price_override || null,
+        quote_result: quoteResult,
+        status: status
+      };
 
-    const r = await fetch(`${apiBase}/quote/document`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const text = await r.text();
-    if (!r.ok) throw new Error(text || `HTTP ${r.status}`);
-    setResult(JSON.parse(text));
-  } catch (e) {
-    setErr(String(e.message || e));
-  } finally {
-    setBusy(false);
+      if (status === 'submitted') {
+        payload.submitted_at = new Date().toISOString();
+      }
+
+      let response;
+      if (quoteId && status === 'draft') {
+        // Update existing draft
+        response = await supabase
+          .from('quotes')
+          .update(payload)
+          .eq('id', quoteId)
+          .select()
+          .single();
+      } else if (quoteId && status === 'submitted') {
+        // Update to submitted
+        response = await supabase
+          .from('quotes')
+          .update(payload)
+          .eq('id', quoteId)
+          .select()
+          .single();
+      } else {
+        // Create new quote
+        response = await supabase
+          .from('quotes')
+          .insert([payload])
+          .select()
+          .single();
+      }
+
+      if (response.error) throw response.error;
+      
+      if (response.data && !quoteId) {
+        setQuoteId(response.data.id);
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error saving to Supabase:', error);
+      throw error;
+    }
   }
-}
+
+  async function compute() {
+    setBusy(true);
+    setErr("");
+    setResult(null);
+    try {
+      const knownLand = form.land_mode === "dollars";
+      const payload = {
+        purchase_price: num(form.purchase_price),
+        zip_code: parseInt(form.zip_code || "0", 10),
+        land_value: knownLand ? num(form.land_value) : pct(form.land_value),
+        known_land_value: knownLand,
+        rush: form.rush,
+        premium: "No",
+        referral: "No",
+        price_override: form.price_override ? num(form.price_override) : 0,
+        property_type: form.property_type,
+        sqft_building: num(form.sqft_building),
+        acres_land: parseFloat(form.acres_land),
+        floors: parseInt(form.floors),
+        multiple_properties: parseInt(form.multiple_properties),
+        purchase_date: form.purchase_date ? form.purchase_date : null,
+        tax_year: parseInt(form.tax_year),
+        capex: form.capex,
+        capex_amount: form.capex === "Yes" ? num(form.capex_amount) : 0,
+        capex_date: form.capex === "Yes" && form.capex_date ? form.capex_date : null,
+        is_1031: form.is_1031,
+        pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
+      };
+
+      const r = await fetch(`${apiBase}/quote/document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const text = await r.text();
+      if (!r.ok) throw new Error(text || `HTTP ${r.status}`);
+      const quoteResult = JSON.parse(text);
+      setResult(quoteResult);
+
+      // Auto-save to Supabase as draft
+      await saveQuoteToSupabase(form, quoteResult, 'draft');
+      
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitForReview() {
+    // Validate required fields
+    if (!form.name || !form.email || !form.phone) {
+      setErr("Please provide your name, email, and phone number before submitting for review.");
+      return;
+    }
+
+    setSubmitting(true);
+    setErr("");
+    setSubmitSuccess(false);
+    
+    try {
+      if (!result) {
+        throw new Error("Please compute a quote first before submitting for review.");
+      }
+
+      // Save/update with submitted status
+      await saveQuoteToSupabase(form, result, 'submitted');
+      setSubmitSuccess(true);
+      
+      // Optional: Show success message for a few seconds
+      setTimeout(() => setSubmitSuccess(false), 5000);
+      
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function sendAi() {
     const content = aiInput.trim();
@@ -147,12 +261,12 @@ async function compute() {
       {/* Header (no-print) */}
       <div className="no-print bg-white border-b-2 shadow-sm" style={{ borderColor: "#558ca5" }}>
         <div className="w-full max-w-4xl mx-auto px-6 py-4 flex items-center gap-4">
-          <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200">
-            <img src="https://i.imgur.com/CzRehap.jpeg" alt="RCG" className="h-12 w-12 object-contain" />
+          <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+            <img src="https://i.imgur.com/CzRehap.jpeg" alt="RCG" className="h-20 w-20 object-contain" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: "#232940" }}>RCGV Quote Assistant</h1>
-            <p className="text-sm" style={{ color: "#558ca5" }}>Cost Segregation Specialists</p>
+            <h1 className="text-3xl font-bold" style={{ color: "#232940" }}>RCGV Quote Assistant</h1>
+            <p className="text-base" style={{ color: "#558ca5" }}>Cost Segregation Specialists</p>
           </div>
         </div>
       </div>
@@ -198,395 +312,414 @@ async function compute() {
       )}
 
       {/* Main */}
-      <div className="w-full max-w-4xl mx-auto p-6">
-        {/* FORM (no-print) */}
-        <div className="no-print bg-white rounded-lg shadow-md p-6 mb-8">
-          <form onSubmit={onSubmit} className="space-y-6">
-            <div className="flex flex-wrap gap-3">
-              <button 
-                type="button" 
-                onClick={() => setForm(EXAMPLE)} 
-                className="px-6 py-2.5 rounded-lg border-2 bg-white hover:bg-gray-50 transition text-sm font-medium"
-                style={{ borderColor: '#558ca5', color: '#232940' }}
-              >
-                Use Example Data
-              </button>
-              <button 
-                type="submit"
-                className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md" 
-                style={{ backgroundColor: '#558ca5' }}
-                disabled={busy}
-              >
-                {busy ? "Computing…" : "Compute Quote"}
-              </button>
-            </div>
-
-            {/* Contact Information */}
-            <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
-              <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Contact Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Name</label>
-                  <input 
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.name} 
-                    onChange={(e) => set("name", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Email</label>
-                  <input 
-                    type="email"
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.email} 
-                    onChange={(e) => set("email", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Phone</label>
-                  <input 
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.phone} 
-                    onChange={(e) => set("phone", e.target.value)} 
-                  />
-                </div>
+      <div className="w-full max-w-5xl mx-auto p-6">
+        <form onSubmit={onSubmit} className="no-print space-y-4">
+          {/* Contact Information */}
+          <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
+            <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Contact Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Name</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.name} 
+                  onChange={(e) => set("name", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Email</label>
+                <input 
+                  type="email"
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.email} 
+                  onChange={(e) => set("email", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Phone</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.phone} 
+                  onChange={(e) => set("phone", e.target.value)} 
+                />
               </div>
             </div>
+          </div>
 
-            {/* Property Information */}
-            <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
-              <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Property Information</h3>
+          {/* Property Information */}
+          <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
+            <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Property Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Owner/Entity</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.owner} 
+                  onChange={(e) => set("owner", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Property Address</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.address} 
+                  onChange={(e) => set("address", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">ZIP Code</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.zip_code} 
+                  onChange={(e) => set("zip_code", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Property Type</label>
+                <div className="flex flex-wrap gap-2">
+                  {["Multi-Family", "Office", "Retail", "Industrial", "Mixed-Use", "Hotel", "Other"].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => set("property_type", type)}
+                      className={`px-4 py-2 rounded-md border-2 transition text-sm font-medium ${
+                        form.property_type === type
+                          ? "text-white font-semibold shadow-md"
+                          : "border-gray-300 bg-white hover:border-gray-400"
+                      }`}
+                      style={form.property_type === type
+                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                        : { borderColor: '#d1d5db' }}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Year Built</label>
+                <input 
+                  type="number"
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.year_built} 
+                  onChange={(e) => set("year_built", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Building Sq Ft</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.sqft_building} 
+                  onChange={(e) => set("sqft_building", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Land (Acres)</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.acres_land} 
+                  onChange={(e) => set("acres_land", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Floors</label>
+                <input 
+                  type="number"
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.floors} 
+                  onChange={(e) => set("floors", e.target.value)} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Multiple Properties</label>
+                <input 
+                  type="number"
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.multiple_properties} 
+                  onChange={(e) => set("multiple_properties", e.target.value)} 
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Purchase & Valuation */}
+          <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
+            <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Purchase & Valuation</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Purchase Price ($)</label>
+                <input 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  value={form.purchase_price} 
+                  onChange={(e) => set("purchase_price", e.target.value)} 
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Land Value</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: "10%", mode: "percent", value: "10" },
+                    { label: "15%", mode: "percent", value: "15" },
+                    { label: "20%", mode: "percent", value: "20" },
+                    { label: "25%", mode: "percent", value: "25" },
+                    { label: "No Land Value", mode: "percent", value: "0" },
+                    { label: "Known Land Value", mode: "dollars", value: "" }
+                  ].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => {
+                        set("land_mode", opt.mode);
+                        set("land_value", opt.value);
+                      }}
+                      className={`px-4 py-2 rounded-lg border-2 transition ${
+                        form.land_mode === opt.mode && (opt.mode === "dollars" || form.land_value === opt.value)
+                          ? "text-white font-semibold"
+                          : "border-gray-300 bg-white hover:border-gray-400"
+                      }`}
+                      style={form.land_mode === opt.mode && (opt.mode === "dollars" || form.land_value === opt.value)
+                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                        : { borderColor: '#d1d5db' }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {form.land_mode === "dollars" && (
+                  <div className="mt-3">
+                    <input 
+                      className="w-full px-3 py-2 border rounded-lg" 
+                      value={form.land_value}
+                      onChange={(e) => set("land_value", e.target.value)}
+                      placeholder="Enter dollar amount"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Owner/Entity</label>
+                  <label className="block text-sm font-medium mb-1">Purchase Date</label>
                   <input 
+                    type="date"
                     className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.owner} 
-                    onChange={(e) => set("owner", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Property Address</label>
-                  <input 
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.address} 
-                    onChange={(e) => set("address", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">ZIP Code</label>
-                  <input 
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.zip_code} 
-                    onChange={(e) => set("zip_code", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Property Type</label>
-                  <div className="flex flex-wrap gap-2">
-                    {["Multi-Family", "Office", "Retail", "Industrial", "Mixed-Use", "Hotel", "Other"].map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => set("property_type", type)}
-                        className={`px-4 py-2 rounded-md border-2 transition text-sm font-medium ${
-                          form.property_type === type
-                            ? "text-white font-semibold shadow-md"
-                            : "border-gray-300 bg-white hover:border-gray-400"
-                        }`}
-                        style={form.property_type === type
-                          ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
-                          : { borderColor: '#d1d5db' }}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Year Built</label>
-                  <input 
-                    type="number"
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.year_built} 
-                    onChange={(e) => set("year_built", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Building Sq Ft</label>
-                  <input 
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.sqft_building} 
-                    onChange={(e) => set("sqft_building", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Land (Acres)</label>
-                  <input 
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.acres_land} 
-                    onChange={(e) => set("acres_land", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Floors</label>
-                  <input 
-                    type="number"
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.floors} 
-                    onChange={(e) => set("floors", e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Multiple Properties</label>
-                  <input 
-                    type="number"
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.multiple_properties} 
-                    onChange={(e) => set("multiple_properties", e.target.value)} 
+                    value={form.purchase_date} 
+                    onChange={(e) => set("purchase_date", e.target.value)} 
                   />
                 </div>
               </div>
-            </div>
 
-            {/* Purchase & Valuation */}
-            <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
-              <h3 className="font-bold text-lg mb-3" style={{ color: '#232940' }}>Purchase & Valuation</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Purchase Price ($)</label>
-                  <input 
-                    className="w-full px-3 py-2 border rounded-lg" 
-                    value={form.purchase_price} 
-                    onChange={(e) => set("purchase_price", e.target.value)} 
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Land Value</label>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { label: "10%", mode: "percent", value: "10" },
-                      { label: "15%", mode: "percent", value: "15" },
-                      { label: "20%", mode: "percent", value: "20" },
-                      { label: "25%", mode: "percent", value: "25" },
-                      { label: "No Land Value", mode: "percent", value: "0" },
-                      { label: "Known Land Value", mode: "dollars", value: "" }
-                    ].map((opt) => (
-                      <button
-                        key={opt.label}
-                        type="button"
-                        onClick={() => {
-                          set("land_mode", opt.mode);
-                          set("land_value", opt.value);
-                        }}
-                        className={`px-4 py-2 rounded-lg border-2 transition ${
-                          form.land_mode === opt.mode && (opt.mode === "dollars" || form.land_value === opt.value)
-                            ? "text-white font-semibold"
-                            : "border-gray-300 bg-white hover:border-gray-400"
-                        }`}
-                        style={form.land_mode === opt.mode && (opt.mode === "dollars" || form.land_value === opt.value)
-                          ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
-                          : { borderColor: '#d1d5db' }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  {form.land_mode === "dollars" && (
-                    <div className="mt-3">
-                      <input 
-                        className="w-full px-3 py-2 border rounded-lg" 
-                        value={form.land_value}
-                        onChange={(e) => set("land_value", e.target.value)}
-                        placeholder="Enter dollar amount"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Purchase Date</label>
-                    <input 
-                      type="date"
-                      className="w-full px-3 py-2 border rounded-lg" 
-                      value={form.purchase_date} 
-                      onChange={(e) => set("purchase_date", e.target.value)} 
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Capital Expenditures?</label>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => set("capex", "No")}
-                      className={`px-4 py-2 rounded-lg border-2 transition ${
-                        form.capex === "No"
-                          ? "text-white font-semibold"
-                          : "border-gray-300 bg-white hover:border-gray-400"
-                      }`}
-                      style={form.capex === "No"
-                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
-                        : { borderColor: '#d1d5db' }}
-                    >
-                      No
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => set("capex", "Yes")}
-                      className={`px-4 py-2 rounded-lg border-2 transition ${
-                        form.capex === "Yes"
-                          ? "text-white font-semibold"
-                          : "border-gray-300 bg-white hover:border-gray-400"
-                      }`}
-                      style={form.capex === "Yes"
-                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
-                        : { borderColor: '#d1d5db' }}
-                    >
-                      Yes
-                    </button>
-                  </div>
-                  {form.capex === "Yes" && (
-                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">CapEx Amount ($)</label>
-                        <input 
-                          className="w-full px-3 py-2 border rounded-lg" 
-                          value={form.capex_amount} 
-                          onChange={(e) => set("capex_amount", e.target.value)} 
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">CapEx Date</label>
-                        <input 
-                          type="date"
-                          className="w-full px-3 py-2 border rounded-lg" 
-                          value={form.capex_date} 
-                          onChange={(e) => set("capex_date", e.target.value)} 
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">1031 Exchange?</label>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => set("is_1031", "No")}
-                      className={`px-4 py-2 rounded-lg border-2 transition ${
-                        form.is_1031 === "No"
-                          ? "text-white font-semibold"
-                          : "border-gray-300 bg-white hover:border-gray-400"
-                      }`}
-                      style={form.is_1031 === "No"
-                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
-                        : { borderColor: '#d1d5db' }}
-                    >
-                      No
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => set("is_1031", "Yes")}
-                      className={`px-4 py-2 rounded-lg border-2 transition ${
-                        form.is_1031 === "Yes"
-                          ? "text-white font-semibold"
-                          : "border-gray-300 bg-white hover:border-gray-400"
-                      }`}
-                      style={form.is_1031 === "Yes"
-                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
-                        : { borderColor: '#d1d5db' }}
-                    >
-                      Yes
-                    </button>
-                  </div>
-                  {form.is_1031 === "Yes" && (
-                    <div className="mt-3">
-                      <label className="block text-sm font-medium mb-1">PAD Deferred Growth ($)</label>
-                      <input 
-                        className="w-full px-3 py-2 border rounded-lg" 
-                        value={form.pad_deferred_growth}
-                        onChange={(e) => set("pad_deferred_growth", e.target.value)}
-                        placeholder="Enter dollar amount"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Tax Year</label>
-                    <input 
-                      type="number"
-                      className="w-full px-3 py-2 border rounded-lg" 
-                      value={form.tax_year} 
-                      onChange={(e) => set("tax_year", e.target.value)} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Tax Deadline</label>
-                    <select 
-                      className="w-full px-3 py-2 border rounded-lg" 
-                      value={form.tax_deadline} 
-                      onChange={(e) => set("tax_deadline", e.target.value)}
-                    >
-                      <option>April</option>
-                      <option>October</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Rush Processing</label>
-                  <div className="flex flex-wrap gap-2">
-                    {["No Rush", "4W $500", "2W $1000"].map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => set("rush", opt)}
-                        className={`px-4 py-2 rounded-lg border-2 transition ${
-                          form.rush === opt
-                            ? "text-white font-semibold"
-                            : "border-gray-300 bg-white hover:border-gray-400"
-                        }`}
-                        style={form.rush === opt
-                          ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
-                          : { borderColor: '#d1d5db' }}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Internal Options */}
-            <div className="border-2 p-4 rounded-lg" style={{ backgroundColor: '#fff3cd', borderColor: '#ffc107' }}>
-              <h3 className="font-bold text-lg mb-3 flex items-center gap-2" style={{ color: '#232940' }}>
-                <span>⚠️ Internal Use Only</span>
-              </h3>
               <div>
-                <label className="block text-sm font-medium mb-1">Price Override (optional)</label>
-                <input 
-                  className="w-full px-3 py-2 border rounded-lg bg-white" 
-                  value={form.price_override} 
-                  onChange={(e) => set("price_override", e.target.value)} 
-                  placeholder="Leave blank for standard pricing"
-                />
-                <p className="text-xs text-gray-600 mt-1">Only use this field to manually override the calculated price</p>
+                <label className="block text-sm font-medium mb-2">Capital Expenditures?</label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => set("capex", "No")}
+                    className={`px-4 py-2 rounded-lg border-2 transition ${
+                      form.capex === "No"
+                        ? "text-white font-semibold"
+                        : "border-gray-300 bg-white hover:border-gray-400"
+                    }`}
+                    style={form.capex === "No"
+                      ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                      : { borderColor: '#d1d5db' }}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => set("capex", "Yes")}
+                    className={`px-4 py-2 rounded-lg border-2 transition ${
+                      form.capex === "Yes"
+                        ? "text-white font-semibold"
+                        : "border-gray-300 bg-white hover:border-gray-400"
+                    }`}
+                    style={form.capex === "Yes"
+                      ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                      : { borderColor: '#d1d5db' }}
+                  >
+                    Yes
+                  </button>
+                </div>
+                {form.capex === "Yes" && (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CapEx Amount ($)</label>
+                      <input 
+                        className="w-full px-3 py-2 border rounded-lg" 
+                        value={form.capex_amount} 
+                        onChange={(e) => set("capex_amount", e.target.value)} 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CapEx Date</label>
+                      <input 
+                        type="date"
+                        className="w-full px-3 py-2 border rounded-lg" 
+                        value={form.capex_date} 
+                        onChange={(e) => set("capex_date", e.target.value)} 
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">1031 Exchange?</label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => set("is_1031", "No")}
+                    className={`px-4 py-2 rounded-lg border-2 transition ${
+                      form.is_1031 === "No"
+                        ? "text-white font-semibold"
+                        : "border-gray-300 bg-white hover:border-gray-400"
+                    }`}
+                    style={form.is_1031 === "No"
+                      ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                      : { borderColor: '#d1d5db' }}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => set("is_1031", "Yes")}
+                    className={`px-4 py-2 rounded-lg border-2 transition ${
+                      form.is_1031 === "Yes"
+                        ? "text-white font-semibold"
+                        : "border-gray-300 bg-white hover:border-gray-400"
+                    }`}
+                    style={form.is_1031 === "Yes"
+                      ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                      : { borderColor: '#d1d5db' }}
+                  >
+                    Yes
+                  </button>
+                </div>
+                {form.is_1031 === "Yes" && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium mb-1">PAD Deferred Growth ($)</label>
+                    <input 
+                      className="w-full px-3 py-2 border rounded-lg" 
+                      value={form.pad_deferred_growth}
+                      onChange={(e) => set("pad_deferred_growth", e.target.value)}
+                      placeholder="Enter dollar amount"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Tax Year</label>
+                  <input 
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.tax_year} 
+                    onChange={(e) => set("tax_year", e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Tax Deadline</label>
+                  <select 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                    value={form.tax_deadline} 
+                    onChange={(e) => set("tax_deadline", e.target.value)}
+                  >
+                    <option>April</option>
+                    <option>October</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Rush Processing</label>
+                <div className="flex flex-wrap gap-2">
+                  {["No Rush", "4W $500", "2W $1000"].map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => set("rush", opt)}
+                      className={`px-4 py-2 rounded-lg border-2 transition ${
+                        form.rush === opt
+                          ? "text-white font-semibold"
+                          : "border-gray-300 bg-white hover:border-gray-400"
+                      }`}
+                      style={form.rush === opt
+                        ? { borderColor: '#558ca5', backgroundColor: '#558ca5' }
+                        : { borderColor: '#d1d5db' }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
+          </div>
 
-            {err && (
-              <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{err}</div>
+          {/* Action Buttons - Moved here */}
+          <div className="flex flex-wrap gap-3 items-center">
+            <button 
+              type="button" 
+              onClick={() => setForm(EXAMPLE)} 
+              className="px-6 py-2.5 rounded-lg border-2 bg-white hover:bg-gray-50 transition text-sm font-medium"
+              style={{ borderColor: '#dc3545', color: '#dc3545' }}
+            >
+              Use Example Data
+            </button>
+            <button 
+              type="submit"
+              className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md" 
+              style={{ backgroundColor: '#558ca5' }}
+              disabled={busy}
+            >
+              {busy ? "Computing…" : "Compute Quote"}
+            </button>
+            
+            {/* Submit for Review Button */}
+            {result && (
+              <button 
+                type="button"
+                onClick={submitForReview}
+                className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md ml-auto" 
+                style={{ backgroundColor: '#28a745' }}
+                disabled={submitting}
+              >
+                {submitting ? "Submitting…" : "✓ Submit & Request a Contact"}
+              </button>
             )}
-          </form>
-        </div>
+          </div>
+
+          {/* Success message */}
+          {submitSuccess && (
+            <div className="p-4 rounded-xl bg-green-50 border-2 border-green-500 text-green-800 text-sm font-medium flex items-center gap-2">
+              <span className="text-2xl">✓</span>
+              <span>Quote submitted successfully! We'll contact you soon at {form.email}.</span>
+            </div>
+          )}
+
+          {/* Internal Options */}
+          <div className="border-2 p-4 rounded-lg" style={{ backgroundColor: '#fff3cd', borderColor: '#ffc107' }}>
+            <h3 className="font-bold text-lg mb-3 flex items-center gap-2" style={{ color: '#232940' }}>
+              <span>⚠️ Internal Use Only</span>
+            </h3>
+            <div>
+              <label className="block text-sm font-medium mb-1">Price Override (optional)</label>
+              <input 
+                className="w-full px-3 py-2 border rounded-lg bg-white" 
+                value={form.price_override} 
+                onChange={(e) => set("price_override", e.target.value)} 
+                placeholder="Leave blank for standard pricing"
+              />
+              <p className="text-xs text-gray-600 mt-1">Only use this field to manually override the calculated price</p>
+            </div>
+          </div>
+
+          {err && (
+            <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{err}</div>
+          )}
+        </form>
 
         {/* PDF Display */}
         <PDFDisplay result={result} form={form} />

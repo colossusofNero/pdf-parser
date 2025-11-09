@@ -2,13 +2,15 @@
 # Pydantic v2-compatible schemas for the quote service
 
 from __future__ import annotations
-from typing import Optional, Literal, Dict
+from typing import Optional, Literal, Dict, List
 from datetime import date
 from pydantic import BaseModel, Field, field_validator
 
+# ✅ UPDATED: Added Hotel and Mixed-Use
 PropertyType = Literal[
     "Industrial", "Medical", "Office", "Other", "Restaurant", "Retail",
-    "Warehouse", "Multi-Family", "Residential/LTR", "Short-Term Rental"
+    "Warehouse", "Multi-Family", "Residential/LTR", "Short-Term Rental",
+    "Hotel", "Mixed-Use"
 ]
 
 RushType = Literal["No Rush", "4W $500", "2W $1000"]
@@ -52,8 +54,6 @@ class QuoteResult(BaseModel):
     final_quote: float
     parts: Dict
 
-from pydantic import BaseModel, Field
-from typing import List, Optional
 
 class PaymentPlan(BaseModel):
     originally_quoted: float
@@ -63,12 +63,14 @@ class PaymentPlan(BaseModel):
     pay_over_time_amount: float
     pay_over_time_note: str = "Up to 36 months"
 
+
 class ScheduleRow(BaseModel):
     year: int
     cost_seg_est: float
     std_dep: float
     trad_cost_seg: float
     bonus_dep: float
+
 
 class QuoteDoc(BaseModel):
     # header
