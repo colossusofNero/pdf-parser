@@ -111,7 +111,7 @@ export default function QuoteFormWithAI() {
       if (quoteId && status === 'draft') {
         // Update existing draft
         response = await supabase
-          .from('quotes')
+          .from('nudges')
           .update(payload)
           .eq('id', quoteId)
           .select()
@@ -119,7 +119,7 @@ export default function QuoteFormWithAI() {
       } else if (quoteId && status === 'submitted') {
         // Update to submitted
         response = await supabase
-          .from('quotes')
+          .from('nudges')
           .update(payload)
           .eq('id', quoteId)
           .select()
@@ -127,7 +127,7 @@ export default function QuoteFormWithAI() {
       } else {
         // Create new quote
         response = await supabase
-          .from('quotes')
+          .from('nudges')
           .insert([payload])
           .select()
           .single();
