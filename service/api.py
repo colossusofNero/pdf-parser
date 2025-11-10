@@ -11,7 +11,12 @@ from engine.quote_calc import QuoteCalculator
 from .schemas import QuoteInputs, QuoteResult, QuoteDoc 
 
 # -------- App & engine setup --------
-XLSX_PATH = r"C:\Users\scott\Claude_Code\Online_quote_RCGV\Base Pricing27.1_Pro_SMART_RCGV.xlsx"  # adjust if needed
+import os
+from pathlib import Path
+
+# Get the base directory (project root)
+BASE_DIR = Path(__file__).resolve().parent.parent
+XLSX_PATH = BASE_DIR / "Base Pricing27.1_Pro_SMART_RCGV.xlsx"
 calc = QuoteCalculator(XLSX_PATH)
 
 app = FastAPI(title="RCGV Quote Tools", version="1.0")
