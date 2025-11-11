@@ -44,26 +44,11 @@ def get_inputs():
 @app.post("/quote/compute", response_model=QuoteResult)
 def compute_quote(inp: QuoteInputs):
     """
-    PRIMARY ENDPOINT - Uses OLD Excel-based calculator
-    (Keep this as-is for now for backwards compatibility)
+    PRIMARY ENDPOINT - Now uses NEW Python calculator
+    (Switched from Excel-based to Python-only calculator)
     """
-    base, _parts = calc.nat_log_quote(
-        purchase_price=inp.purchase_price,
-        land_value=inp.land_value,
-        known_land_value=inp.known_land_value,
-        zip_code=inp.zip_code
-    )
-    final, breakdown = calc.final_quote(
-        purchase_price=inp.purchase_price,
-        land_value=inp.land_value,
-        known_land_value=inp.known_land_value,
-        zip_code=inp.zip_code,
-        rush_label=inp.rush,
-        premium=inp.premium,
-        referral=inp.referral,
-        price_override=inp.price_override
-    )
-    return QuoteResult(base_quote=round(base, 2), final_quote=final, parts=breakdown)
+    base, final, breakdown = compute_with_new_calculator(inp)
+    return QuoteResult(base_quote=base, final_quote=final, parts=breakdown)
 
 @app.post("/quote/compute_new", response_model=QuoteResult)
 def compute_quote_new(inp: QuoteInputs):
