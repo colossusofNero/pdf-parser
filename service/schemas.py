@@ -6,11 +6,9 @@ from typing import Optional, Literal, Dict, List
 from datetime import date
 from pydantic import BaseModel, Field, field_validator
 
-# ✅ UPDATED: Added Hotel and Mixed-Use
 PropertyType = Literal[
     "Industrial", "Medical", "Office", "Other", "Restaurant", "Retail",
-    "Warehouse", "Multi-Family", "Residential/LTR", "Short-Term Rental",
-    "Hotel", "Mixed-Use"
+    "Warehouse", "Multi-Family", "Residential/LTR", "Short-Term Rental"
 ]
 
 RushType = Literal["No Rush", "4W $500", "2W $1000"]
@@ -31,6 +29,7 @@ class QuoteInputs(BaseModel):
     multi_properties: Optional[int] = Field(default=None, alias="multiple_properties")
     purchase_date: Optional[date] = None
     tax_year: Optional[int] = None
+    tax_deadline: Optional[str] = None  # ← ADDED THIS
     pad_deferred_growth: Optional[bool] = False
     is_1031: Optional[Literal["Yes", "No"]] = "No"
     capex: Optional[Literal["Yes", "No"]] = "No"
