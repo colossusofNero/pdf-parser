@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os, json
 from typing import Dict, Any, List
+from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -45,6 +46,114 @@ def compute_quote(inp: QuoteInputs):
     """
     base, final, breakdown = compute_with_new_calculator(inp)
     return QuoteResult(base_quote=base, final_quote=final, parts=breakdown)
+
+@app.post("/quote/document")
+def quote_document(inp: QuoteInputs):
+    """
+    Generate a complete quote document with payment schedule
+    Uses Python calculator (no Excel dependency)
+    """
+    # Calculate quote using new calculator
+    base, final, breakdown = compute_with_new_calculator(inp)
+    
+    # Calculate land value in dollars
+    if inp.known_land_value:
+        land_value_dollars = inp.land_value
+    else:
+        pct = inp.land_value / 100.0 if inp.land_value > 1.0 else inp.land_value
+        land_value_dollars = inp.purchase_price * pct
+    
+    building_value = inp.purchase_price - land_value_dollars + (inp.capex_amount or 0)
+    
+    # Payment options
+    rush_fee = breakdown.get('rush_fee', 0.0)
+    pay_upfront = round(final * 0.91, 2)  # 9% discount
+    pay_50_50 = round(final / 2.0, 2)
+    pay_over_time = round(final / 4.0, 2)
+    
+    # Generate depreciation schedule (simplified)
+    schedule = []
+    standard_dep = round(building_value / 27.5, 2)
+    
+    # Year 1 with bonus depreciation
+    year1_bonus = round(building_value * 0.8, 2)  # 80% bonus in year 1
+    year1_trad = round(building_value * 0.2 / 27.5, 2)
+    
+    schedule.append({
+        "year": 1,
+        "cost_seg_est": year1_bonus,
+        "std_dep": standard_dep,
+        "trad_cost_seg": year1_trad + round(building_value * 0.8 / 5, 2),
+        "bonus_dep": year1_bonus
+    })
+    
+    # Years 2-27
+    remaining_value = building_value * 0.2
+    annual_trad = round(remaining_value / 27, 2)
+    annual_bonus = round(remaining_value / 27, 2)
+    
+    for year in range(2, 28):
+        schedule.append({
+            "year": year,
+            "cost_seg_est": annual_bonus,
+            "std_dep": standard_dep,
+            "trad_cost_seg": annual_trad,
+            "bonus_dep": annual_bonus
+        })
+    
+    # Totals
+    total_cost_seg = sum(s["cost_seg_est"] for s in schedule)
+    total_std_dep = sum(s["std_dep"] for s in schedule)
+    total_trad = sum(s["trad_cost_seg"] for s in schedule)
+    
+    # Format dates
+    quote_date = datetime.now().strftime("%Y-%m-%d")
+    valid_until = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    purchase_date_str = inp.purchase_date.strftime("%Y-%m-%d") if inp.purchase_date else quote_date
+    due_date_label = f"{inp.tax_deadline or 'October'} {inp.tax_year or datetime.now().year}"
+    
+    return {
+        # Header
+        "company": "Valued Client",
+        "property_label": inp.property_type or "Multi-Family Property",
+        "property_address": "Property Address",
+        "purchase_price": inp.purchase_price,
+        "capex_amount": inp.capex_amount or 0,
+        "building_value": round(building_value, 2),
+        "land_value": round(land_value_dollars, 2),
+        "purchase_date": purchase_date_str,
+        "sqft_building": inp.sqft_building,
+        "acres_land": inp.acres_land,
+        "due_date_label": due_date_label,
+        "quote_date": quote_date,
+        "valid_until": valid_until,
+        
+        # Contact info
+        "rcg_contact_name": "Scott Roelofs",
+        "rcg_contact_office": "331.248.7245",
+        "rcg_contact_cell": "480.276.5626",
+        "rcg_contact_email": "info@rcgvaluation.com",
+        "rcg_contact_site": "rcgvaluation.com",
+        "rcg_address": "6929 N Hayden Rd Suite C4-494, Scottsdale, AZ 85250",
+        
+        # Payments
+        "payments": {
+            "originally_quoted": final,
+            "rush_fee": rush_fee,
+            "pay_upfront": pay_upfront,
+            "pay_50_50": pay_50_50,
+            "pay_over_time_amount": pay_over_time,
+            "pay_over_time_note": "Quarterly installments"
+        },
+        
+        # Schedule
+        "schedule": schedule,
+        
+        # Totals
+        "total_cost_seg_est": round(total_cost_seg, 2),
+        "total_std_dep": round(total_std_dep, 2),
+        "total_trad_cost_seg": round(total_trad, 2)
+    }
 
 @app.post("/quote/save_draft")
 def save_draft():
