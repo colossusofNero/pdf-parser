@@ -13,12 +13,21 @@ from .schemas import QuoteInputs, QuoteResult
 
 # -------- App setup --------
 app = FastAPI(title="RCGV Quote Tools", version="2.0")
+
+# -------- CORS Configuration (CRITICAL for frontend) --------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True, 
-    allow_methods=["*"], 
-    allow_headers=["*"]
+    allow_origins=[
+        "*",  # Allow all origins (you can restrict this later)
+        "https://rcgv-quote-assistant-f49ytx12k-rcg-valuation.vercel.app",
+        "https://*.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],  # Expose all headers to the frontend
 )
 
 # In-memory draft (swap to Supabase later)
@@ -343,5 +352,12 @@ def health_check():
     return {
         "status": "healthy",
         "calculator": "python",
-        "version": "2.0"
+        "version": "2.0",
+        "cors": "enabled"
     }
+
+# ---- OPTIONS preflight for CORS ----
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    """Handle CORS preflight requests"""
+    return {"message": "OK"}
