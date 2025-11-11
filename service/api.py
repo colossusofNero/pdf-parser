@@ -1,4 +1,3 @@
-# service/api.py - COMPLETE FILE
 from __future__ import annotations
 
 import os, json
@@ -7,19 +6,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# -------- OLD CALCULATOR (keep as backup) --------
 from engine.quote_calc import QuoteCalculator
-from .schemas import QuoteInputs, QuoteResult, QuoteDoc 
-
-# -------- App & engine setup --------
-import os
-from pathlib import Path
-
-# Get the base directory (project root)
-BASE_DIR = Path(__file__).resolve().parent.parent
-XLSX_PATH = BASE_DIR / "Base Pricing27.1_Pro_SMART_RCGV.xlsx"
+XLSX_PATH = r"C:\Users\scott\Claude_Code\Online_quote_RCGV\Base Pricing27.1_Pro_SMART_RCGV.xlsx"
 calc = QuoteCalculator(XLSX_PATH)
 
-app = FastAPI(title="RCGV Quote Tools", version="1.0")
+# -------- NEW CALCULATOR --------
+from .calculator_adapter import compute_with_new_calculator
+
+from .schemas import QuoteInputs, QuoteResult, QuoteDoc 
+
+# -------- App setup --------
+app = FastAPI(title="RCGV Quote Tools", version="2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
@@ -46,8 +44,8 @@ def get_inputs():
 @app.post("/quote/compute", response_model=QuoteResult)
 def compute_quote(inp: QuoteInputs):
     """
-    Quick computation endpoint - returns just the fee breakdown.
-    Does NOT update Excel or generate full document.
+    PRIMARY ENDPOINT - Uses OLD Excel-based calculator
+    (Keep this as-is for now for backwards compatibility)
     """
     base, _parts = calc.nat_log_quote(
         purchase_price=inp.purchase_price,
@@ -67,6 +65,31 @@ def compute_quote(inp: QuoteInputs):
     )
     return QuoteResult(base_quote=round(base, 2), final_quote=final, parts=breakdown)
 
+@app.post("/quote/compute_new", response_model=QuoteResult)
+def compute_quote_new(inp: QuoteInputs):
+    """
+    NEW ENDPOINT - Uses new Python-only calculator
+    Test this endpoint to compare results with the old calculator
+    
+    Usage:
+    POST /quote/compute_new
+    {
+        "purchase_price": 1000000,
+        "zip_code": 85260,
+        "land_value": 0.10,
+        "known_land_value": false,
+        "rush": "No Rush",
+        "premium": "No",
+        "referral": "No",
+        "sqft_building": 38000,
+        "acres_land": 2.0,
+        "property_type": "Multi-Family",
+        "floors": 2
+    }
+    """
+    base, final, breakdown = compute_with_new_calculator(inp)
+    return QuoteResult(base_quote=base, final_quote=final, parts=breakdown)
+
 @app.post("/quote/save_draft")
 def save_draft():
     return {"ok": True, "draft": CURRENT_DRAFT}
@@ -74,52 +97,6 @@ def save_draft():
 @app.get("/quote/load_draft")
 def load_draft():
     return {"ok": True, "draft": CURRENT_DRAFT}
-
-# ---- helper for pydantic v1/v2 ----
-def _to_dict(m: BaseModel) -> Dict[str, Any]:
-    return m.model_dump() if hasattr(m, "model_dump") else m.dict()
-
-# ---- Quote document route ----
-@app.post("/quote/document", response_model=QuoteDoc)
-def quote_document(inp: QuoteInputs):
-    """
-    Full quote document generation.
-    
-    This endpoint:
-    1. Computes the quote fees
-    2. Writes inputs to Excel 'Input Sheet'
-    3. Reads computed values from 'Printable Quote'
-    4. Returns complete document including depreciation schedule
-    """
-    base, _ = calc.nat_log_quote(
-        purchase_price=inp.purchase_price,
-        land_value=inp.land_value,
-        known_land_value=inp.known_land_value,
-        zip_code=inp.zip_code
-    )
-    final, parts = calc.final_quote(
-        purchase_price=inp.purchase_price,
-        land_value=inp.land_value,
-        known_land_value=inp.known_land_value,
-        zip_code=inp.zip_code,
-        rush_label=inp.rush,
-        premium=inp.premium,
-        referral=inp.referral,
-        price_override=inp.price_override
-    )
-
-    payload = calc.build_quote_doc(
-        inputs=_to_dict(inp),                            # <-- use helper
-        final_quote_amount=final,
-        rush_fee=parts.get("rush_fee", 0.0)
-    )
-    payload["rcg_contact_name"] = "Scott Roelofs"
-    payload["rcg_contact_office"] = "331.248.7245"
-    payload["rcg_contact_cell"]   = "480.276.5626"
-    payload["rcg_contact_email"]  = "info@rcgvaluation.com"
-    payload["rcg_contact_site"]   = "rcgvaluation.com"
-    payload["rcg_address"]        = "6929 N Hayden Rd Suite C4-494, Scottsdale, AZ 85250"
-    return payload
 
 # -------- AgentKit + ChatKit (lazy OpenAI client) --------
 from openai import OpenAI
@@ -215,6 +192,9 @@ def _tool_quote_set_inputs(args: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "draft": CURRENT_DRAFT}
 
 def _tool_quote_compute(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Agent tool for computing quotes - uses OLD calculator for now
+    """
     payload = {**CURRENT_DRAFT, **(args or {})}
     qi = QuoteInputs(**payload)
     base, _parts = calc.nat_log_quote(
@@ -235,9 +215,21 @@ def _tool_quote_compute(args: Dict[str, Any]) -> Dict[str, Any]:
     )
     return {"base_quote": round(base, 2), "final_quote": final, "parts": breakdown}
 
+def _tool_quote_compute_new(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Agent tool for computing quotes - uses NEW calculator
+    (Optional - can be added to TOOLS if you want agents to use new calculator)
+    """
+    payload = {**CURRENT_DRAFT, **(args or {})}
+    qi = QuoteInputs(**payload)
+    base, final, breakdown = compute_with_new_calculator(qi)
+    return {"base_quote": base, "final_quote": final, "parts": breakdown}
+
 _TOOL_REGISTRY = {
     "quote_set_inputs": _tool_quote_set_inputs,
     "quote_compute": _tool_quote_compute,
+    # Uncomment to make agents use new calculator:
+    # "quote_compute": _tool_quote_compute_new,
 }
 
 @app.post("/agent/chat")
@@ -300,12 +292,100 @@ def envcheck():
 @app.get("/")
 def root():
     return {
-        "ok": True,
-        "service": "RCGV Quote API",
-        "docs": "/docs",
-        "endpoints": {
-            "quick_compute": "/quote/compute (fee calc only)",
-            "full_document": "/quote/document (Excel integration + schedule)",
-            "chat": "/agent/chat"
+        "ok": True, 
+        "service": "RCGV Quote API v2.0", 
+        "calculators": {
+            "old": "/quote/compute (Excel-based)",
+            "new": "/quote/compute_new (Python-only)"
+        },
+        "docs": "/docs", 
+        "chat": "/agent/chat"
+    }
+
+# ---- helper for pydantic v1/v2 ----
+def _to_dict(m: BaseModel) -> Dict[str, Any]:
+    return m.model_dump() if hasattr(m, "model_dump") else m.dict()
+
+# ---- Quote document route ----
+@app.post("/quote/document", response_model=QuoteDoc)
+def quote_document(inp: QuoteInputs):
+    """
+    Generate a complete quote document with payment schedule
+    Uses OLD calculator (only one with build_quote_doc method)
+    """
+    base, _ = calc.nat_log_quote(
+        purchase_price=inp.purchase_price,
+        land_value=inp.land_value,
+        known_land_value=inp.known_land_value,
+        zip_code=inp.zip_code
+    )
+    final, parts = calc.final_quote(
+        purchase_price=inp.purchase_price,
+        land_value=inp.land_value,
+        known_land_value=inp.known_land_value,
+        zip_code=inp.zip_code,
+        rush_label=inp.rush,
+        premium=inp.premium,
+        referral=inp.referral,
+        price_override=inp.price_override
+    )
+
+    payload = calc.build_quote_doc(
+        inputs=_to_dict(inp),
+        final_quote_amount=final,
+        rush_fee=parts.get("rush_fee", 0.0)
+    )
+    payload["rcg_contact_name"] = "Scott Roelofs"
+    payload["rcg_contact_office"] = "331.248.7245"
+    payload["rcg_contact_cell"]   = "480.276.5626"
+    payload["rcg_contact_email"]  = "info@rcgvaluation.com"
+    payload["rcg_contact_site"]   = "rcgvaluation.com"
+    payload["rcg_address"]        = "6929 N Hayden Rd Suite C4-494, Scottsdale, AZ 85250"
+    return payload
+
+# ---- Comparison endpoint (helpful for testing) ----
+@app.post("/quote/compare")
+def compare_calculators(inp: QuoteInputs):
+    """
+    Compare results from both old and new calculators
+    Useful for validation and testing
+    """
+    # Old calculator
+    base_old, _ = calc.nat_log_quote(
+        purchase_price=inp.purchase_price,
+        land_value=inp.land_value,
+        known_land_value=inp.known_land_value,
+        zip_code=inp.zip_code
+    )
+    final_old, breakdown_old = calc.final_quote(
+        purchase_price=inp.purchase_price,
+        land_value=inp.land_value,
+        known_land_value=inp.known_land_value,
+        zip_code=inp.zip_code,
+        rush_label=inp.rush,
+        premium=inp.premium,
+        referral=inp.referral,
+        price_override=inp.price_override
+    )
+    
+    # New calculator
+    base_new, final_new, breakdown_new = compute_with_new_calculator(inp)
+    
+    return {
+        "old_calculator": {
+            "base_quote": round(base_old, 2),
+            "final_quote": final_old,
+            "parts": breakdown_old
+        },
+        "new_calculator": {
+            "base_quote": base_new,
+            "final_quote": final_new,
+            "parts": breakdown_new
+        },
+        "difference": {
+            "base_diff": round(base_new - base_old, 2),
+            "final_diff": round(final_new - final_old, 2),
+            "base_diff_pct": round(((base_new - base_old) / base_old * 100) if base_old != 0 else 0, 2),
+            "final_diff_pct": round(((final_new - final_old) / final_old * 100) if final_old != 0 else 0, 2)
         }
     }
