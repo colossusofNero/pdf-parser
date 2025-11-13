@@ -1,0 +1,19 @@
+services:
+  # Backend API service
+  - type: web
+    name: rcgv-quote-api
+    env: python
+    region: oregon
+    plan: free  # Change to 'starter' or higher for production
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn service.api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: PORT
+        value: 10000
+    healthCheckPath: /healthz
+    autoDeploy: true  # Automatically deploy when main branch is updated
