@@ -243,19 +243,29 @@ class CostSegregationCalculator:
             self.allocations = allocations
         else:
             # Use default allocations with age adjustment
-            base_allocations = {
-                '5yr': 0.07,
-                '7yr': 0.05,
-                '15yr': 0.24,
-                '27.5yr': 0.64 if property_type == 'multi-family' else 0.00,
-                '39yr': 0.00 if property_type == 'multi-family' else 0.61,
-            }
-            self.allocations = calculate_allocation_percentages(
-                property_type, 
-                self.year_built, 
-                self.acquisition_date.year,
-                base_allocations
-            )
+            # Excel-matched allocation percentages
+            # NOTE: 7yr property ONLY exists in commercial (39yr), NOT residential (27.5yr)
+            if property_type == 'multi-family':
+                # Residential: No 7yr property - it's all combined into 5yr
+                base_allocations = {
+                    '5yr': 0.08926036,     # 8.926036% (7.000000% + 1.926036%)
+                    '7yr': 0.00,           # 0% - no 7yr in residential
+                    '15yr': 0.27500630,    # 27.500630%
+                    '27.5yr': 0.63573333,  # 63.573333%
+                    '39yr': 0.00,
+                }
+            else:
+                # Commercial: Has 7yr property (furniture, fixtures, equipment)
+                base_allocations = {
+                    '5yr': 0.07,           # 7.000000%
+                    '7yr': 0.01926036,     # 1.926036%
+                    '15yr': 0.27500630,    # 27.500630%
+                    '27.5yr': 0.00,
+                    '39yr': 0.60688776,    # 60.688776%
+                }
+            # Use base allocations directly (Excel percentages are already final)
+            # Age adjustments are already baked into the Excel-matched percentages
+            self.allocations = base_allocations
         
         # Calculate allocated amounts
         # Remap building class keys for ADS (27.5yr→30yr, 39yr→40yr)
@@ -326,17 +336,9 @@ class CostSegregationCalculator:
             if k not in adj:
                 adj[k] = Decimal("0")
 
-        # Apply the explicit 7->5 transfer to match Excel
-        # For MF 2025 same-year case, transfer 5.766036% from 7yr to 5yr
-        # This is an approximation - adjust based on your Excel formula
-        if self.is_residential and not self.use_ads:
-            # Calculate transfer amount (approximately 81.5% of 7yr goes to 5yr)
-            transfer_factor = Decimal("0.815")  # Adjust this based on exact Excel formula
-            add_to_5 = adj['7yr'] * transfer_factor
-
-            # Apply transfer
-            adj['5yr'] = adj['5yr'] + add_to_5
-            adj['7yr'] = adj['7yr'] - add_to_5
+        # 7->5 transfer disabled - Excel percentages already account for final allocation
+        # The base percentages (7%, 1.926036%, etc.) are the actual allocations to use
+        # No additional transfers needed
 
         # Normalize to ensure sum == 1.00000000
         total_pct = adj['5yr'] + adj['7yr'] + adj['15yr'] + adj['building']
