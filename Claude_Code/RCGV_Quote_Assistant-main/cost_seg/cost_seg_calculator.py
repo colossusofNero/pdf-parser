@@ -748,35 +748,53 @@ class CostSegregationCalculator:
         
         return schedule
     
-    def lifetime_totals(self) -> dict:
+    def lifetime_totals(self, from_css_year: bool = False) -> dict:
         """
         Return totals over the full remaining life (including current year)
         for each method: standard, traditional, bonus.
-        These totals must reconcile to:
-          - same-year CSS: full basis, or
-          - later-year CSS: basis - SL_through_prior_year
 
-        By definition, lifetime depreciation equals the depreciable basis
-        (for primary property) plus CapEx amounts (which fully depreciate).
+        Args:
+            from_css_year: If True, calculate from CSS year forward (excluding prior years)
+                          If False, calculate full lifetime from acquisition
+
+        These totals must reconcile to:
+          - same-year CSS: full basis (+ CapEx for traditional/bonus only)
+          - later-year CSS: basis - SL_through_prior_year (+ CapEx for traditional/bonus only)
+
+        Note: Standard method only depreciates the base property (total_depreciable).
+              CapEx pools are tracked separately and only included in traditional/bonus methods.
         """
-        # Base depreciable amount (primary property)
+        # Base depreciable amount (primary property only)
         basis = Decimal(str(self.total_depreciable))
 
-        # Add CapEx pools (each fully depreciates to its amount)
+        # Calculate CapEx total (only for traditional/bonus methods)
         capex_total = Decimal("0")
         if self.capex_pools:
             for pool in self.capex_pools:
                 capex_total += Decimal(str(pool.amount))
 
-        # Total lifetime depreciation = basis + capex
-        # This is the same for all methods (standard, traditional, bonus)
-        # since they all eventually depreciate the full amount, just at different rates
-        lifetime_total = basis + capex_total
+        # For later-year CSS, we need to subtract SL depreciation already taken
+        if from_css_year:
+            years_elapsed = self.css_date.year - self.acquisition_date.year
+            if years_elapsed > 0:
+                sl_prior = Decimal(str(self.calculate_standard_depreciation(years_elapsed)))
+                # Standard method: only depreciates base property
+                std_lifetime = basis - sl_prior
+                # Traditional/Bonus: base property + CapEx (CapEx not depreciated under standard)
+                trad_bonus_lifetime = basis - sl_prior + capex_total
+            else:
+                # Same year
+                std_lifetime = basis
+                trad_bonus_lifetime = basis + capex_total
+        else:
+            # Full lifetime from acquisition
+            std_lifetime = basis
+            trad_bonus_lifetime = basis + capex_total
 
         return {
-            "standard": lifetime_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            "traditional": lifetime_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            "bonus": lifetime_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            "standard": std_lifetime.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            "traditional": trad_bonus_lifetime.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            "bonus": trad_bonus_lifetime.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         }
 
     def schedule_span(self) -> str:

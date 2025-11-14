@@ -630,25 +630,41 @@ def quote_document(
             expected_total = basis - sl_prior
 
         # Use lifetime totals (full recovery horizon), NOT the 10-year slice, for reconciliation.
-        lt = calc.lifetime_totals()
+        # Pass from_css_year=True to get remaining life from CSS year forward
+        lt = calc.lifetime_totals(from_css_year=True)
         std_total = lt["standard"]
         trad_total = lt["traditional"]
         bonus_total = lt["bonus"]
 
         exp = expected_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+        # Calculate expected totals for each method
+        # Standard method: basis only (CapEx not depreciated under standard)
+        exp_std = exp
+        # Traditional/Bonus: basis + CapEx
+        capex_total = Decimal("0")
+        if calc.capex_pools:
+            for pool in calc.capex_pools:
+                capex_total += Decimal(str(pool.amount))
+        exp_trad = exp + capex_total
+        exp_bonus = exp + capex_total
+
         # Allow small rounding tolerance (1 cent)
         tolerance = Decimal("0.01")
-        if not (abs(std_total - exp) <= tolerance and abs(trad_total - exp) <= tolerance and abs(bonus_total - exp) <= tolerance):
+        if not (abs(std_total - exp_std) <= tolerance and abs(trad_total - exp_trad) <= tolerance and abs(bonus_total - exp_bonus) <= tolerance):
             logger.error(
-                f"Lifetime totals invariant violation: expected={float(exp)}, "
-                f"std={float(std_total)}, trad={float(trad_total)}, bonus={float(bonus_total)}"
+                f"Lifetime totals invariant violation: "
+                f"exp_std={float(exp_std)}, std={float(std_total)}, "
+                f"exp_trad={float(exp_trad)}, trad={float(trad_total)}, "
+                f"exp_bonus={float(exp_bonus)}, bonus={float(bonus_total)}"
             )
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "Lifetime totals do not reconcile to expected total",
-                    "expected_total": float(exp),
+                    "error": "Lifetime totals do not reconcile to expected totals",
+                    "expected_standard": float(exp_std),
+                    "expected_traditional": float(exp_trad),
+                    "expected_bonus": float(exp_bonus),
                     "std_total": float(std_total),
                     "trad_total": float(trad_total),
                     "bonus_total": float(bonus_total),
@@ -656,7 +672,7 @@ def quote_document(
                 },
             )
 
-        logger.info(f"Lifetime invariant check passed: expected={float(exp)}, std={float(std_total)}, trad={float(trad_total)}, bonus={float(bonus_total)}")
+        logger.info(f"Lifetime invariant check passed: exp_std={float(exp_std)}, std={float(std_total)}, exp_trad={float(exp_trad)}, trad={float(trad_total)}, bonus={float(bonus_total)}")
 
     # Build notes object for diagnostic/transparency
     notes = {
