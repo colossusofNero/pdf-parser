@@ -419,10 +419,11 @@ def quote_document(
 
     # ========== REAL DEPRECIATION ENGINE ==========
     # Determine property type for cost seg engine
+    # Only Multi-Family and Residential/LTR are true residential (27.5yr)
+    # Short-Term Rentals are commercial property (39yr)
     property_type_map = {
         "Multi-Family": "multi-family",
         "Residential/LTR": "multi-family",
-        "Short-Term Rental": "multi-family",
     }
     css_property_type = property_type_map.get(inp.property_type, "commercial")
 
