@@ -54,19 +54,12 @@ const pct = (v) => {
 
 export default function QuoteFormWithAI() {
   const [form, setForm] = useState(EXAMPLE);
-  const [pricingBusy, setPricingBusy] = useState(false);
-  const [depreciationBusy, setDepreciationBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [pricingResult, setPricingResult] = useState(null);
-  const [depreciationResult, setDepreciationResult] = useState(null);
+  const [result, setResult] = useState(null);
   const [quoteId, setQuoteId] = useState(null); // Track the saved quote ID
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [bonusOverride, setBonusOverride] = useState(null); // QA-only bonus override
-  const [showQAPanel, setShowQAPanel] = useState(false); // QA debug panel toggle
-
-  // Detect non-prod environment
-  const isNonProd = import.meta.env.MODE !== 'production' || import.meta.env.VITE_ENABLE_QA === 'true';
 
   // AI state - keep your existing AI code
   const [aiOpen, setAiOpen] = useState(false);
@@ -153,73 +146,16 @@ export default function QuoteFormWithAI() {
     }
   }
 
-  // Compute pricing only (fast - no depreciation schedule)
-  async function computePricing() {
-    setPricingBusy(true);
+  async function compute() {
+    setBusy(true);
     setErr("");
+    setResult(null);
     try {
       const knownLand = form.land_mode === "dollars";
-      const zipCode = parseInt(form.zip_code || "0", 10);
-
-      // Validate zip code
-      if (!zipCode || zipCode < 10000 || zipCode > 99999) {
-        throw new Error("Please enter a valid 5-digit ZIP code");
-      }
-
       const payload = {
         purchase_price: num(form.purchase_price),
-        zip_code: zipCode,
-        land_value: knownLand ? num(form.land_value) : num(form.land_value),
-        known_land_value: knownLand,
-        rush: form.rush,
-        premium: "No",
-        referral: "No",
-        price_override: form.price_override ? num(form.price_override) : 0,
-        property_type: form.property_type,
-        sqft_building: num(form.sqft_building),
-        acres_land: parseFloat(form.acres_land),
-        floors: parseInt(form.floors),
-        multiple_properties: parseInt(form.multiple_properties)
-      };
-
-      const r = await fetch(`${apiBase}/quote/compute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      if (!r.ok) {
-        const errorData = await r.json();
-        throw new Error(errorData.detail || `HTTP ${r.status}`);
-      }
-
-      const result = await r.json();
-      setPricingResult(result);
-
-    } catch (e) {
-      setErr(String(e.message || e));
-    } finally {
-      setPricingBusy(false);
-    }
-  }
-
-  // Compute full depreciation schedule with 481(a)
-  async function computeDepreciation() {
-    setDepreciationBusy(true);
-    setErr("");
-    try {
-      const knownLand = form.land_mode === "dollars";
-      const zipCode = parseInt(form.zip_code || "0", 10);
-
-      // Validate zip code
-      if (!zipCode || zipCode < 10000 || zipCode > 99999) {
-        throw new Error("Please enter a valid 5-digit ZIP code");
-      }
-
-      const payload = {
-        purchase_price: num(form.purchase_price),
-        zip_code: zipCode,
-        land_value: knownLand ? num(form.land_value) : num(form.land_value),
+        zip_code: parseInt(form.zip_code || "0", 10),
+        land_value: knownLand ? num(form.land_value) : pct(form.land_value),
         known_land_value: knownLand,
         rush: form.rush,
         premium: "No",
@@ -232,7 +168,6 @@ export default function QuoteFormWithAI() {
         multiple_properties: parseInt(form.multiple_properties),
         purchase_date: form.purchase_date ? form.purchase_date : null,
         tax_year: parseInt(form.tax_year),
-        tax_deadline: form.tax_deadline || "October",
         capex: form.capex,
         capex_amount: form.capex === "Yes" ? num(form.capex_amount) : 0,
         capex_date: form.capex === "Yes" && form.capex_date ? form.capex_date : null,
@@ -240,39 +175,24 @@ export default function QuoteFormWithAI() {
         pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
       };
 
-      // Add bonus_override if QA mode and set
-      if (isNonProd && bonusOverride !== null && bonusOverride !== "") {
-        payload.bonus_override = parseInt(bonusOverride);
-      }
-
       const r = await fetch(`${apiBase}/quote/document`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-
-      if (!r.ok) {
-        const errorData = await r.json();
-        throw new Error(errorData.detail || `HTTP ${r.status}`);
-      }
-
-      const result = await r.json();
-      setDepreciationResult(result);
+      const text = await r.text();
+      if (!r.ok) throw new Error(text || `HTTP ${r.status}`);
+      const quoteResult = JSON.parse(text);
+      setResult(quoteResult);
 
       // Auto-save to Supabase as draft
-      await saveQuoteToSupabase(form, result, 'draft');
-
+      await saveQuoteToSupabase(form, quoteResult, 'draft');
+      
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
-      setDepreciationBusy(false);
+      setBusy(false);
     }
-  }
-
-  // Compute both pricing and depreciation
-  async function computeBoth() {
-    await computePricing();
-    await computeDepreciation();
   }
 
   async function submitForReview() {
@@ -285,19 +205,19 @@ export default function QuoteFormWithAI() {
     setSubmitting(true);
     setErr("");
     setSubmitSuccess(false);
-
+    
     try {
-      if (!depreciationResult) {
-        throw new Error("Please compute depreciation first before submitting for review.");
+      if (!result) {
+        throw new Error("Please compute a quote first before submitting for review.");
       }
 
       // Save/update with submitted status
-      await saveQuoteToSupabase(form, depreciationResult, 'submitted');
+      await saveQuoteToSupabase(form, result, 'submitted');
       setSubmitSuccess(true);
-
+      
       // Optional: Show success message for a few seconds
       setTimeout(() => setSubmitSuccess(false), 5000);
-
+      
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
@@ -333,7 +253,7 @@ export default function QuoteFormWithAI() {
 
   const onSubmit = (e) => {
     e.preventDefault();
-    computeBoth();
+    compute();
   };
 
   return (
@@ -738,64 +658,31 @@ export default function QuoteFormWithAI() {
             </div>
           </div>
 
-          {/* QA-Only Controls */}
-          {isNonProd && (
-            <div className="border-2 p-4 rounded-lg" style={{ backgroundColor: '#fff3cd', borderColor: '#ffc107' }}>
-              <h3 className="font-bold text-lg mb-3 flex items-center gap-2" style={{ color: '#232940' }}>
-                <span>🔧 QA Controls (Non-Prod Only)</span>
-              </h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Bonus Override (0-100%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    className="w-full px-3 py-2 border rounded-lg bg-white"
-                    value={bonusOverride === null ? "" : bonusOverride}
-                    onChange={(e) => setBonusOverride(e.target.value ? parseInt(e.target.value) : null)}
-                    placeholder="Auto-detect (leave blank)"
-                  />
-                  <p className="text-xs text-gray-600 mt-1">Override auto-detected bonus rate (for testing partial bonus scenarios)</p>
-                </div>
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowQAPanel(!showQAPanel)}
-                    className="text-sm text-blue-600 underline"
-                  >
-                    {showQAPanel ? "Hide" : "Show"} Debug Panel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
+          {/* Action Buttons - Moved here */}
           <div className="flex flex-wrap gap-3 items-center">
-            <button
-              type="button"
-              onClick={() => setForm(EXAMPLE)}
+            <button 
+              type="button" 
+              onClick={() => setForm(EXAMPLE)} 
               className="px-6 py-2.5 rounded-lg border-2 bg-white hover:bg-gray-50 transition text-sm font-medium"
               style={{ borderColor: '#dc3545', color: '#dc3545' }}
             >
               Use Example Data
             </button>
-            <button
+            <button 
               type="submit"
-              className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md"
+              className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md" 
               style={{ backgroundColor: '#558ca5' }}
-              disabled={pricingBusy || depreciationBusy}
+              disabled={busy}
             >
-              {(pricingBusy || depreciationBusy) ? "Computing…" : "Compute Quote & Depreciation"}
+              {busy ? "Computing…" : "Compute Quote"}
             </button>
-
+            
             {/* Submit for Review Button */}
-            {depreciationResult && (
-              <button
+            {result && (
+              <button 
                 type="button"
                 onClick={submitForReview}
-                className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md ml-auto"
+                className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md ml-auto" 
                 style={{ backgroundColor: '#28a745' }}
                 disabled={submitting}
               >
@@ -830,205 +717,12 @@ export default function QuoteFormWithAI() {
           </div>
 
           {err && (
-            <div className="p-4 rounded-xl bg-red-50 border-2 border-red-500 text-red-800 text-sm font-medium">
-              <div className="flex items-start gap-2">
-                <span className="text-2xl">⚠️</span>
-                <div>
-                  <div className="font-bold mb-1">Input Error</div>
-                  <div>{err}</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* QA Debug Panel */}
-          {isNonProd && showQAPanel && (pricingResult || depreciationResult) && (
-            <details className="border-2 p-4 rounded-lg" style={{ backgroundColor: '#f0f0f0', borderColor: '#999' }}>
-              <summary className="cursor-pointer font-bold text-sm">Debug: API Payloads & Responses</summary>
-              <div className="mt-3 space-y-3 text-xs font-mono">
-                {pricingResult && (
-                  <div>
-                    <div className="font-bold mb-1">Pricing Response (/quote/compute):</div>
-                    <pre className="bg-white p-2 rounded overflow-auto max-h-40">
-                      {JSON.stringify({
-                        base_quote: pricingResult.base_quote,
-                        final_quote: pricingResult.final_quote,
-                        parts: pricingResult.parts
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                )}
-                {depreciationResult && (
-                  <div>
-                    <div className="font-bold mb-1">Depreciation Response (/quote/document):</div>
-                    <pre className="bg-white p-2 rounded overflow-auto max-h-40">
-                      {JSON.stringify({
-                        bonus_rate: depreciationResult.depreciation_481a?.bonus_rate_detected,
-                        catch_up: depreciationResult.depreciation_481a?.['481a_catch_up'],
-                        first_year_benefit: depreciationResult.depreciation_481a?.total_first_year_benefit
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            </details>
+            <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{err}</div>
           )}
         </form>
 
-        {/* Pricing Card */}
-        {pricingResult && (
-          <div className="no-print bg-white p-6 rounded-lg shadow-lg border-2 mb-6" style={{ borderColor: '#558ca5' }}>
-            <h2 className="text-2xl font-bold mb-4" style={{ color: '#232940' }}>💰 Pricing Summary</h2>
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <div className="text-sm font-semibold text-gray-600">Base Quote</div>
-                <div className="text-2xl font-bold text-blue-700">
-                  {pricingResult.base_quote.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                </div>
-              </div>
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <div className="text-sm font-semibold text-gray-600">Final Quote</div>
-                <div className="text-2xl font-bold text-green-700">
-                  {pricingResult.final_quote.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                </div>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <div className="text-sm font-semibold text-gray-600">Parts Breakdown</div>
-                <div className="text-xs space-y-1 mt-2">
-                  {Object.entries(pricingResult.parts || {}).map(([key, value]) => (
-                    <div key={key} className="flex justify-between">
-                      <span className="capitalize">{key.replace(/_/g, ' ')}:</span>
-                      <span className="font-semibold">${Number(value).toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Depreciation Summary Box */}
-        {depreciationResult && depreciationResult.depreciation_481a && (
-          <div className="no-print bg-gradient-to-br from-green-50 to-blue-50 p-6 rounded-lg shadow-lg border-2 mb-6" style={{ borderColor: '#28a745' }}>
-            <h2 className="text-2xl font-bold mb-4" style={{ color: '#232940' }}>📊 Depreciation Summary (481(a) Breakdown)</h2>
-
-            {/* Key Metrics */}
-            <div className="grid md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white p-4 rounded-lg border border-gray-200">
-                <div className="text-xs font-semibold text-gray-600">Bonus Rate Detected</div>
-                <div className="text-3xl font-bold text-blue-600">
-                  {depreciationResult.depreciation_481a.bonus_rate_detected}%
-                </div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-yellow-300">
-                <div className="text-xs font-semibold text-gray-600">481(a) Catch-Up</div>
-                <div className="text-xl font-bold text-yellow-700">
-                  {depreciationResult.depreciation_481a['481a_catch_up'].toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">Prior years</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-blue-300">
-                <div className="text-xs font-semibold text-gray-600">Current Year ({depreciationResult.tax_year})</div>
-                <div className="text-xl font-bold text-blue-700">
-                  {depreciationResult.depreciation_481a.current_year_total.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">This year</div>
-              </div>
-              <div className="bg-green-100 p-4 rounded-lg border-2 border-green-500">
-                <div className="text-xs font-semibold text-green-800">Total First-Year Benefit</div>
-                <div className="text-2xl font-bold text-green-700">
-                  {depreciationResult.depreciation_481a.total_first_year_benefit.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
-                </div>
-                <div className="text-xs text-green-600 mt-1">Catch-up + Current</div>
-              </div>
-            </div>
-
-            {/* Per-Class Tables */}
-            <div className="grid md:grid-cols-3 gap-4">
-              {/* Current Year Depreciation by Class */}
-              <div className="bg-white p-4 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-bold mb-2 text-gray-800">Current Year by Class</h3>
-                <table className="w-full text-xs">
-                  <thead className="border-b">
-                    <tr>
-                      <th className="text-left py-1">Class</th>
-                      <th className="text-right py-1">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(depreciationResult.depreciation_481a.current_year_depreciation_by_class || {}).map(([cls, amt]) => (
-                      <tr key={cls} className={amt > 0 ? '' : 'opacity-40'}>
-                        <td className="py-1">{cls}</td>
-                        <td className="text-right font-semibold">
-                          {Number(amt).toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Remaining Basis by Class */}
-              <div className="bg-white p-4 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-bold mb-2 text-gray-800">Remaining Basis</h3>
-                <table className="w-full text-xs">
-                  <thead className="border-b">
-                    <tr>
-                      <th className="text-left py-1">Class</th>
-                      <th className="text-right py-1">Remaining</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(depreciationResult.depreciation_481a.remaining_basis_by_class || {}).map(([cls, amt]) => (
-                      <tr key={cls}>
-                        <td className="py-1">{cls}</td>
-                        <td className="text-right font-semibold">
-                          {Number(amt) === 0 ? (
-                            <span className="text-green-600 font-bold">Complete</span>
-                          ) : (
-                            Number(amt).toLocaleString(undefined, { style: 'currency', currency: 'USD' })
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Life Remaining by Class */}
-              <div className="bg-white p-4 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-bold mb-2 text-gray-800">Life Remaining</h3>
-                <table className="w-full text-xs">
-                  <thead className="border-b">
-                    <tr>
-                      <th className="text-left py-1">Class</th>
-                      <th className="text-right py-1">Years Left</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(depreciationResult.depreciation_481a.life_remaining_by_class || {}).map(([cls, years]) => (
-                      <tr key={cls}>
-                        <td className="py-1">{cls}</td>
-                        <td className="text-right font-semibold">
-                          {years === "Complete" ? (
-                            <span className="text-green-600 font-bold">Complete</span>
-                          ) : years === 0 ? (
-                            <span className="text-gray-400">N/A</span>
-                          ) : (
-                            `${years} yrs`
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* PDF Display */}
-        <PDFDisplay result={depreciationResult} form={form} />
+        <PDFDisplay result={result} form={form} />
       </div>
     </div>
   );
