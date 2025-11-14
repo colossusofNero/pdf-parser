@@ -14,6 +14,16 @@ PropertyType = Literal[
 
 RushType = Literal["No Rush", "4W $500", "2W $1000"]
 
+AssetClassification = Literal["5-year", "7-year", "15-year", "27.5-year", "39-year", "QIP", "Other"]
+
+
+class CapexItem(BaseModel):
+    """Individual capital expenditure item with its own placed-in-service date"""
+    amount: float = Field(gt=0, description="CapEx amount in dollars")
+    placed_in_service_date: date = Field(description="Date this CapEx was placed in service")
+    classification: AssetClassification = Field(default="Other", description="Asset class for depreciation")
+    description: str = Field(default="", description="Description of the capital expenditure")
+
 
 class QuoteInputs(BaseModel):
     # Required for compute
@@ -30,12 +40,16 @@ class QuoteInputs(BaseModel):
     multi_properties: Optional[int] = Field(default=None, alias="multiple_properties")
     purchase_date: Optional[date] = None
     tax_year: Optional[int] = None
-    tax_deadline: Optional[str] = None  # ← ADDED THIS
+    tax_deadline: Optional[str] = None
+    year_built: Optional[int] = None
     pad_deferred_growth: Optional[bool] = False
     is_1031: Optional[Literal["Yes", "No"]] = "No"
     capex: Optional[Literal["Yes", "No"]] = "No"
     capex_amount: Optional[float] = 0
     capex_date: Optional[date] = None
+    capex_items: Optional[List[CapexItem]] = None
+    bonus_override: Optional[int] = Field(default=None, ge=0, le=100, description="Override bonus depreciation rate (0-100%)")
+    use_ads: Optional[bool] = Field(default=False, description="Use Alternative Depreciation System (no bonus, longer lives)")
     price_override: Optional[float] = None
     rush: RushType = "No Rush"
     premium: Literal["Yes", "No"] = "No"

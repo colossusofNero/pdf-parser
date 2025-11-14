@@ -467,7 +467,7 @@ def quote_document(
             acquisition_date=acquisition_date,
             css_date=css_date,
             property_type=css_property_type,
-            year_built=None,  # Will use acquisition year as default
+            year_built=inp.year_built or acquisition_date.year,  # Use provided year_built or acquisition year
             capex_items=capex_items_list,
             use_ads=inp.use_ads or False,
             bonus_override=inp.bonus_override
@@ -704,10 +704,15 @@ def quote_document(
         f"481a_catch_up={depreciation_481a['481a_catch_up'] if depreciation_481a else 0:.2f}"
     )
 
+    # Add depreciation period to property label
+    dep_period = "27.5yr" if css_property_type == "multi-family" else "39yr"
+    property_type_display = inp.property_type or "Multi-Family"
+    property_label_with_period = f"{property_type_display} ({dep_period})"
+
     return {
         # Header
         "company": "Valued Client",
-        "property_label": inp.property_type or "Multi-Family Property",
+        "property_label": property_label_with_period,
         "property_address": "Property Address",
         "purchase_price": inp.purchase_price,
         "capex_amount": inp.capex_amount or 0,
