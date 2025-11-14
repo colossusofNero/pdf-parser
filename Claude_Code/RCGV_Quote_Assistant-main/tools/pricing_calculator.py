@@ -19,61 +19,81 @@ def calculate_quote_pricing(
     # Base Linear Calculation
     base_cost = (purchase_price + capex) * 0.0572355 * 0.25 * 0.08 + 4000
     
-    # Cost Basis Factor
+    # Cost Basis Factor (from Excel VLOOKUP Tables)
     total_cost = purchase_price + capex
-    if total_cost >= 9000000:
-        cost_basis_factor = 1.05
-    elif total_cost >= 8000000:
-        cost_basis_factor = 1.04
-    elif total_cost >= 7000000:
-        cost_basis_factor = 1.03
-    elif total_cost >= 6000000:
-        cost_basis_factor = 1.02
+    if total_cost >= 10000000:
+        cost_basis_factor = 1.5
+    elif total_cost >= 7500000:
+        cost_basis_factor = 1.45
     elif total_cost >= 5000000:
-        cost_basis_factor = 1.01
-    elif total_cost >= 4000000:
-        cost_basis_factor = 1.0
+        cost_basis_factor = 1.4
     elif total_cost >= 3000000:
-        cost_basis_factor = 0.99
+        cost_basis_factor = 1.35
     elif total_cost >= 2000000:
-        cost_basis_factor = 0.98
+        cost_basis_factor = 1.3
+    elif total_cost >= 1500000:
+        cost_basis_factor = 1.25
+    elif total_cost >= 1250000:
+        cost_basis_factor = 1.1
     elif total_cost >= 1000000:
-        cost_basis_factor = 0.97
+        cost_basis_factor = 1.075
     elif total_cost >= 750000:
-        cost_basis_factor = 0.96
+        cost_basis_factor = 1.05
     elif total_cost >= 500000:
-        cost_basis_factor = 0.95
+        cost_basis_factor = 1.02
+    elif total_cost >= 250000:
+        cost_basis_factor = 1.01
     else:
         cost_basis_factor = 1.0
     
-    # Zip Code Factor
-    zip_code_factor = 1.0
+    # Zip Code Factor (from Excel VLOOKUP Tables)
+    zip_int = int(zip_code) if isinstance(zip_code, str) else zip_code
+    if zip_int >= 90000:
+        zip_code_factor = 1.1
+    elif zip_int >= 80000:
+        zip_code_factor = 1.05
+    elif zip_int >= 70000:
+        zip_code_factor = 1.0
+    elif zip_int >= 60000:
+        zip_code_factor = 1.05
+    elif zip_int >= 50000:
+        zip_code_factor = 1.1
+    elif zip_int >= 40000:
+        zip_code_factor = 1.05
+    elif zip_int >= 30000:
+        zip_code_factor = 1.0
+    elif zip_int >= 20000:
+        zip_code_factor = 1.05
+    elif zip_int >= 10000:
+        zip_code_factor = 1.1
+    else:
+        zip_code_factor = 1.11
     
-    # SqFt Building Factor
+    # SqFt Building Factor (from Excel VLOOKUP Tables)
     if sqft_building == 0:
-        sqft_factor = 0.75
-    elif sqft_building <= 2500:
-        sqft_factor = 0.8
-    elif sqft_building <= 5000:
-        sqft_factor = 0.85
-    elif sqft_building <= 10000:
-        sqft_factor = 0.9
-    elif sqft_building <= 15000:
-        sqft_factor = 0.95
-    elif sqft_building <= 20000:
         sqft_factor = 1.0
-    elif sqft_building <= 30000:
-        sqft_factor = 1.05
-    elif sqft_building <= 35000:
-        sqft_factor = 1.1
-    elif sqft_building <= 40000:
-        sqft_factor = 1.15
-    elif sqft_building <= 45000:
+    elif sqft_building >= 55000:
+        sqft_factor = 1.22
+    elif sqft_building >= 50000:
         sqft_factor = 1.2
-    elif sqft_building <= 50000:
-        sqft_factor = 1.25
-    elif sqft_building >= 550000:
-        sqft_factor = 9.0
+    elif sqft_building >= 45000:
+        sqft_factor = 1.18
+    elif sqft_building >= 40000:
+        sqft_factor = 1.16
+    elif sqft_building >= 35000:
+        sqft_factor = 1.14
+    elif sqft_building >= 30000:
+        sqft_factor = 1.12
+    elif sqft_building >= 20000:
+        sqft_factor = 1.1
+    elif sqft_building >= 15000:
+        sqft_factor = 1.08
+    elif sqft_building >= 10000:
+        sqft_factor = 1.06
+    elif sqft_building >= 5000:
+        sqft_factor = 1.04
+    elif sqft_building >= 2500:
+        sqft_factor = 1.02
     else:
         sqft_factor = 1.0
     
@@ -105,7 +125,7 @@ def calculate_quote_pricing(
     else:
         acres_factor = 1.0
     
-    # Property Type Factor
+    # Property Type Factor (from Excel VLOOKUP Tables)
     property_type_map = {
         "Industrial": 1.01,
         "Medical": 1.15,
@@ -114,14 +134,14 @@ def calculate_quote_pricing(
         "Restaurant": 1.15,
         "Retail": 1.05,
         "Warehouse": 0.4,
-        "Multi Family": 0.5,
-        "Multi-Family": 0.5,
+        "Multi Family": 0.4,
+        "Multi-Family": 0.4,
         "Residential/LTR": 1.05,
         "Short-Term Rental": 1.05
     }
     property_type_factor = property_type_map.get(property_type, 1.0)
     
-    # Floors Factor
+    # Floors Factor (from Excel VLOOKUP Tables)
     if floors >= 11:
         floors_factor = 1.3
     elif floors >= 10:
@@ -132,10 +152,8 @@ def calculate_quote_pricing(
         floors_factor = 1.1
     elif floors >= 3:
         floors_factor = 1.05
-    elif floors >= 2:
-        floors_factor = 1.0
     else:
-        floors_factor = 1.0
+        floors_factor = 1.0  # 1 or 2 floors
     
     # Multiple Properties Factor
     # Single property should be 1.0 (no adjustment), not 0.7
