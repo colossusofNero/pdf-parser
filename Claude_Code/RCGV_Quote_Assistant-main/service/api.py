@@ -494,19 +494,39 @@ def quote_document(
         # Generate depreciation schedules - ENGINE-BACKED (no stubs)
         # Uses engine's calculate_current_year_depreciation + CapEx/ADS/QIP logic
         schedule_years = 10  # Standard 10-year projection
-        full_schedule = calc.generate_depreciation_schedule(years=schedule_years)
+
+        # Generate TWO schedules:
+        # 1. WITH bonus depreciation (for bonus_dep column)
+        full_schedule_with_bonus = calc.generate_depreciation_schedule(years=schedule_years)
+
+        # 2. WITHOUT bonus depreciation (for trad_cost_seg column) - traditional cost seg
+        calc_no_bonus = CostSegregationCalculator(
+            purchase_price=inp.purchase_price,
+            land_value=land_value_dollars,
+            capex=inp.capex_amount or 0,
+            pad=pad,
+            deferred_gain=deferred_gain,
+            acquisition_date=acquisition_date,
+            css_date=css_date,
+            property_type=css_property_type,
+            year_built=inp.year_built or acquisition_date.year,
+            capex_items=capex_items_list,
+            use_ads=inp.use_ads or False,
+            bonus_override=0  # NO BONUS for traditional cost seg
+        )
+        full_schedule_no_bonus = calc_no_bonus.generate_depreciation_schedule(years=schedule_years)
 
         # Build schedule in format expected by frontend
         schedule = []
-        for year_data in full_schedule:
-            year_num = year_data['year']
+        for idx, year_data_bonus in enumerate(full_schedule_with_bonus):
+            year_num = year_data_bonus['year']
+            year_data_no_bonus = full_schedule_no_bonus[idx]
 
-            # Engine provides depreciation by class for this year
-            year_dep_by_class = year_data['depreciation']
+            # Bonus depreciation schedule (WITH bonus)
+            bonus_dep = year_data_bonus['depreciation_total']
 
-            # Traditional cost seg (sum of all classes, respects bonus if applicable)
-            # This is what they WOULD get with cost seg (includes bonus in year 1 if eligible)
-            trad_cost_seg = year_data['depreciation_total']
+            # Traditional cost seg schedule (WITHOUT bonus)
+            trad_cost_seg = year_data_no_bonus['depreciation_total']
 
             # Standard straight-line depreciation (annual increment)
             # For year 1: total through year 1
@@ -517,9 +537,8 @@ def quote_document(
                 std_dep = (calc.calculate_standard_depreciation(year_num) -
                           calc.calculate_standard_depreciation(year_num - 1))
 
-            # For display: cost_seg_est and bonus_dep are the same (includes bonus if applicable)
-            cost_seg_est = trad_cost_seg
-            bonus_dep = trad_cost_seg
+            # Cost seg estimate is the bonus schedule (what they actually get)
+            cost_seg_est = bonus_dep
 
             schedule.append({
                 "year": year_num,
