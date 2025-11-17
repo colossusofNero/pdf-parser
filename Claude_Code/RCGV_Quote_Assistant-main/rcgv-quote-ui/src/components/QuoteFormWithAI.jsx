@@ -68,8 +68,79 @@ export default function QuoteFormWithAI() {
   const [aiMsgs, setAiMsgs] = useState([]);
   const [aiInput, setAiInput] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const chatEndRef = useRef(null);
+  const recognitionRef = useRef(null);
+
   useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), [aiMsgs]);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setAiInput(transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+  }, []);
+
+  // Function to speak text
+  const speak = (text) => {
+    if (!voiceEnabled || !('speechSynthesis' in window)) return;
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Toggle voice recording
+  const toggleVoiceRecording = () => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      setIsListening(true);
+      try {
+        recognitionRef.current.start();
+      } catch (error) {
+        console.error('Error starting recognition:', error);
+        setIsListening(false);
+      }
+    }
+  };
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -250,10 +321,30 @@ export default function QuoteFormWithAI() {
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error || "AI error");
-      setAiMsgs((m) => [...m, { role: "assistant", content: data.reply || "(no reply)" }]);
-      if (data.draft && typeof data.draft === "object") setForm((f) => ({ ...f, ...data.draft }));
+
+      const reply = data.reply || "(no reply)";
+      setAiMsgs((m) => [...m, { role: "assistant", content: reply }]);
+
+      // Speak the response if voice is enabled
+      if (voiceEnabled) {
+        speak(reply);
+      }
+
+      // Update form with AI suggestions
+      if (data.draft && typeof data.draft === "object") {
+        setForm((f) => ({ ...f, ...data.draft }));
+      }
+
+      // Handle submission action if AI indicates it
+      if (data.action === "submit" && result) {
+        setTimeout(() => handleSubmit(), 1000);
+      } else if (data.action === "compute") {
+        setTimeout(() => compute(), 1000);
+      }
     } catch (e) {
-      setAiMsgs((m) => [...m, { role: "assistant", content: "Sorry, I hit an error. Try again." }]);
+      const errorMsg = "Sorry, I hit an error. Try again.";
+      setAiMsgs((m) => [...m, { role: "assistant", content: errorMsg }]);
+      if (voiceEnabled) speak(errorMsg);
     } finally {
       setAiBusy(false);
     }
@@ -293,26 +384,95 @@ export default function QuoteFormWithAI() {
       {/* AI panel (no-print) */}
       {aiOpen && (
         <div className="no-print fixed bottom-28 right-8 z-50 w-96 h-[600px] bg-white rounded-lg shadow-2xl flex flex-col border-2" style={{ borderColor: "#558ca5" }}>
-          <div className="p-3 border-b font-semibold" style={{ color: "#232940" }}>AI Quote Assistant</div>
+          {/* Header with voice controls */}
+          <div className="p-3 border-b flex items-center justify-between" style={{ backgroundColor: "#f8f9fa" }}>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold" style={{ color: "#232940" }}>AI Quote Assistant</span>
+              {isSpeaking && (
+                <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 animate-pulse">
+                  🔊 Speaking
+                </span>
+              )}
+              {isListening && (
+                <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 animate-pulse">
+                  🎤 Listening
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              className="text-xs px-2 py-1 rounded hover:bg-gray-200"
+              title={voiceEnabled ? "Disable voice" : "Enable voice"}
+            >
+              {voiceEnabled ? "🔊 Voice On" : "🔇 Voice Off"}
+            </button>
+          </div>
+
+          {/* Welcome message if no messages */}
+          {aiMsgs.length === 0 && (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              <div className="mb-2">👋 Hi! I'm your AI assistant.</div>
+              <div className="mb-2">I can help you:</div>
+              <ul className="text-left space-y-1 max-w-xs mx-auto">
+                <li>• Fill out the quote form</li>
+                <li>• Answer questions about pricing</li>
+                <li>• Compute and submit your quote</li>
+              </ul>
+              <div className="mt-3 text-xs">
+                💬 Type or 🎤 speak to get started
+              </div>
+            </div>
+          )}
+
+          {/* Message display */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {aiMsgs.map((m, i) => (
               <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
-                <div className={`inline-block px-3 py-2 rounded ${m.role === "user" ? "bg-blue-100" : "bg-gray-100"}`}>
+                <div className={`inline-block px-3 py-2 rounded ${m.role === "user" ? "bg-blue-100 text-blue-900" : "bg-gray-100 text-gray-900"} max-w-[90%]`}>
                   {m.content}
                 </div>
               </div>
             ))}
             <div ref={chatEndRef} />
           </div>
+
+          {/* Input area with microphone */}
           <div className="p-3 border-t flex gap-2">
-            <input 
-              className="w-full border rounded px-3 py-2" 
-              value={aiInput} 
-              onChange={(e) => setAiInput(e.target.value)} 
-              onKeyPress={(e) => e.key === 'Enter' && sendAi()}
-              placeholder="Ask about pricing, inputs, etc." 
+            <button
+              onClick={toggleVoiceRecording}
+              disabled={aiBusy || isSpeaking}
+              className={`px-3 py-2 rounded text-white transition-all ${
+                isListening
+                  ? "bg-red-500 animate-pulse"
+                  : "hover:scale-105"
+              }`}
+              style={{ backgroundColor: isListening ? "#ef4444" : "#558ca5" }}
+              title={isListening ? "Stop recording" : "Start voice input"}
+            >
+              {isListening ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <rect x="6" y="6" width="8" height="8" rx="1"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                </svg>
+              )}
+            </button>
+            <input
+              className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              value={aiInput}
+              onChange={(e) => setAiInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendAi()}
+              placeholder={isListening ? "Listening..." : "Type or click mic to speak..."}
+              disabled={isListening}
             />
-            <button onClick={sendAi} disabled={aiBusy} className="px-3 py-2 rounded text-white" style={{ backgroundColor: "#558ca5" }}>
+            <button
+              onClick={sendAi}
+              disabled={aiBusy || isListening || !aiInput.trim()}
+              className="px-4 py-2 rounded text-white font-medium transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#558ca5" }}
+            >
               {aiBusy ? "..." : "Send"}
             </button>
           </div>

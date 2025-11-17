@@ -830,7 +830,10 @@ TOOLS = [
                     "price_override": {"type": "number"},
                     "rush": {"type": "string", "enum": ["No Rush","4W $500","2W $1000"]},
                     "premium": {"type": "string", "enum": ["Yes","No"]},
-                    "referral": {"type": "string", "enum": ["Yes","No"]}
+                    "referral": {"type": "string", "enum": ["Yes","No"]},
+                    "name": {"type": "string", "description": "Client name"},
+                    "email": {"type": "string", "description": "Client email"},
+                    "phone": {"type": "string", "description": "Client phone"}
                 }
             }
         }
@@ -839,7 +842,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "quote_compute",
-            "description": "Compute the quote using provided inputs.",
+            "description": "Compute the quote using provided inputs. Returns base and final pricing.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -855,27 +858,79 @@ TOOLS = [
                 "required": ["purchase_price","zip_code","land_value","known_land_value"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quote_submit_request",
+            "description": "Signal that the user wants to submit their quote. Only call this when user explicitly requests to submit/send the quote.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "confirm": {"type": "boolean", "description": "Set to true to confirm submission intent"}
+                },
+                "required": ["confirm"]
+            }
+        }
     }
 ]
 
-SYSTEM_PROMPT = """You are RCGV's quoting assistant for cost segregation.
+SYSTEM_PROMPT = """You are RCGV's friendly AI assistant for cost segregation quoting. You help clients through a conversational process to get accurate quotes.
+
+Your Personality:
+- Warm, professional, and helpful
+- Patient and encouraging
+- Speak naturally, as if having a conversation
+- Use "I" and "you" (e.g., "I can help you with that")
+- Acknowledge what they say before asking for more info
+
+Your Goals:
+1. Guide users through filling out the quote form conversationally
+2. Ask for missing information one question at a time
+3. Compute quotes when you have the required information
+4. Offer to submit the quote when they're satisfied
 
 Workflow:
-1) If you have purchase_price, zip_code, land_value, known_land_value → call quote_compute.
-2) Otherwise, ask for only the missing fields (one question at a time).
+1. Greet new users warmly and ask how you can help
+2. Listen to their needs and extract information from what they say
+3. Use quote_set_inputs to store any information they provide
+4. Ask for missing required fields: purchase_price, zip_code, land_value, known_land_value
+5. When you have all required fields, use quote_compute to calculate the quote
+6. Present the quote clearly and ask if they want to make any adjustments
+7. When they're ready, offer to submit the quote using quote_submit_request
 
-Response format (always):
-- Title line: **RCGV Quote**
-- Two bullets showing Base and Final as $X,XXX.XX
-- A compact breakdown list:
-  - Cost basis, cb_factor, zip_factor
-  - Adjustments (Rush, Premium %, Referral %, Override if present)
-- A single follow-up question like: "Want to toggle Rush (No Rush / 4W $500 / 2W $1000) or Premium (Yes/No)?"
+Required Fields for Quote:
+- purchase_price (dollar amount)
+- zip_code (5-digit ZIP code)
+- land_value (percentage or dollar amount)
+- known_land_value (true if dollar amount, false if percentage)
+
+Optional Fields (ask if relevant):
+- property_type (e.g., Multi-Family, Office, Retail, Industrial, etc.)
+- rush (options: "No Rush", "4W $500", "2W $1000")
+- premium (options: "Yes", "No")
+- referral (options: "Yes", "No")
+- Contact info: name, email, phone
+
+Response Style:
+- After computing a quote, present it clearly:
+  "Great news! Here's your quote:
+  • Base Price: $X,XXX
+  • Final Price: $X,XXX (after adjustments)
+
+  This includes [briefly mention key factors].
+
+  Would you like to adjust rush delivery, premium service, or submit this quote?"
+
+- Be conversational: "I see you have a multi-family property..." rather than just listing facts
+- Celebrate progress: "Perfect!" "Got it!" "Excellent!"
+- Offer next steps: "What would you like to do next?" "Shall I submit this for you?"
 
 Rules:
-- If land is a percent, set known_land_value=False; if a dollar value, set known_land_value=True.
-- Validate zip (00000–99999) and land percent (0–1).
-- Be concise, businesslike, no fluff.
+- If land is a percent, set known_land_value=False; if dollar amount, set known_land_value=True
+- Validate: zip_code (00000-99999), land percent (0-100 or 0-1)
+- Always be encouraging and positive
+- When user says "submit" or "send", use quote_submit_request tool
 """
 
 class ChatRequest(BaseModel):
@@ -893,11 +948,25 @@ def _tool_quote_compute(args: Dict[str, Any]) -> Dict[str, Any]:
     payload = {**CURRENT_DRAFT, **(args or {})}
     qi = QuoteInputs(**payload)
     base, final, breakdown = compute_with_new_calculator(qi)
-    return {"base_quote": base, "final_quote": final, "parts": breakdown}
+    return {"base_quote": base, "final_quote": final, "parts": breakdown, "action": "compute"}
+
+def _tool_quote_submit_request(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Agent tool to signal quote submission request.
+    This doesn't actually submit - it signals the frontend to handle submission.
+    """
+    if args.get("confirm"):
+        return {
+            "ok": True,
+            "message": "Quote submission requested. Preparing to submit...",
+            "action": "submit"
+        }
+    return {"ok": False, "message": "Submission not confirmed"}
 
 _TOOL_REGISTRY = {
     "quote_set_inputs": _tool_quote_set_inputs,
     "quote_compute": _tool_quote_compute,
+    "quote_submit_request": _tool_quote_submit_request,
 }
 
 @app.post("/agent/chat")
@@ -911,6 +980,9 @@ def agent_chat(req: ChatRequest):
             "role": "system",
             "content": f"Current known inputs (JSON): {json.dumps(CURRENT_DRAFT)}"
         })
+
+    # Track any action signals from tools
+    action_signal = None
 
     # loop tool-calls until final answer
     for _ in range(6):
@@ -940,6 +1012,11 @@ def agent_chat(req: ChatRequest):
                 args = json.loads(tc.function.arguments or "{}")
                 fn = _TOOL_REGISTRY.get(name)
                 tool_out = {"error": f"Unknown tool {name}"} if not fn else fn(args)
+
+                # Capture action signal from tool result
+                if isinstance(tool_out, dict) and "action" in tool_out:
+                    action_signal = tool_out["action"]
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -949,7 +1026,10 @@ def agent_chat(req: ChatRequest):
             continue
 
         # no tool calls → final reply
-        return {"reply": msg.content, "draft": CURRENT_DRAFT}
+        response = {"reply": msg.content, "draft": CURRENT_DRAFT}
+        if action_signal:
+            response["action"] = action_signal
+        return response
 
     return {"reply": "I hit the tool-call step limit. Please try again with more detail."}
 
