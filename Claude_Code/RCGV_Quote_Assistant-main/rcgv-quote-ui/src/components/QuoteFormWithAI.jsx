@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+console.log("🔧 DEBUG: API Base URL =", apiBase || "(empty - will use relative URLs)");
+console.log("🔧 DEBUG: All env vars =", import.meta.env);
 
 const EXAMPLE = {
   // Contact
@@ -175,7 +177,11 @@ export default function QuoteFormWithAI() {
         pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
       };
 
-      const r = await fetch(`${apiBase}/quote/document`, {
+      const fullUrl = `${apiBase}/quote/document`;
+      console.log("🚀 CALLING API:", fullUrl);
+      console.log("📦 PAYLOAD:", payload);
+
+      const r = await fetch(fullUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -183,6 +189,8 @@ export default function QuoteFormWithAI() {
       const text = await r.text();
       if (!r.ok) throw new Error(text || `HTTP ${r.status}`);
       const quoteResult = JSON.parse(text);
+      console.log("📋 API Response property_label:", quoteResult.property_label);
+      console.log("📋 Full API Response:", quoteResult);
       setResult(quoteResult);
 
       // Auto-save to Supabase as draft
@@ -916,7 +924,9 @@ function PDFDisplay({ result, form }) {
           {/* Depreciation table - LIMIT TO 28 ROWS MAX */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="bg-gradient-to-r from-gray-800 to-gray-600 text-white p-2">
-              <h2 className="text-base font-bold">27.5-Year Depreciation Schedule</h2>
+              <h2 className="text-base font-bold">
+                {result.property_label ? `${result.property_label} Depreciation Schedule` : `${form.property_type} Depreciation Schedule`}
+              </h2>
               <p className="text-[10px] text-gray-300">Comparison: Your Current vs. Our Service</p>
             </div>
 
@@ -931,8 +941,8 @@ function PDFDisplay({ result, form }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* CRITICAL: Only show first 28 rows to fit on one page */}
-                  {schedule.slice(0, 28).map((r, i) => (
+                  {/* Show all years for complete depreciation schedule */}
+                  {schedule.map((r, i) => (
                     <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                       <td className="px-2 py-0.5 font-semibold">{r.year}</td>
                       <td className="px-2 py-0.5 text-right text-gray-500">{money(r.std_dep)}</td>

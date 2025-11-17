@@ -247,21 +247,23 @@ class CostSegregationCalculator:
             # NOTE: 7yr property ONLY exists in commercial (39yr), NOT residential (27.5yr)
             if property_type == 'multi-family':
                 # Residential: No 7yr property - it's all combined into 5yr
+                # All percentages to 8 decimal places, sum = 1.00000000
                 base_allocations = {
-                    '5yr': 0.08926036,     # 8.926036% (7.000000% + 1.926036%)
-                    '7yr': 0.00,           # 0% - no 7yr in residential
-                    '15yr': 0.27500630,    # 27.500630%
-                    '27.5yr': 0.63573333,  # 63.573333%
-                    '39yr': 0.00,
+                    '5yr': 0.08926036,     # 8.92603600%
+                    '7yr': 0.00000000,     # 0.00000000% - no 7yr in residential
+                    '15yr': 0.27500630,    # 27.50063000%
+                    '27.5yr': 0.63573334,  # 63.57333400% (adjusted for exact 100%)
+                    '39yr': 0.00000000,
                 }
             else:
                 # Commercial: Has 7yr property (furniture, fixtures, equipment)
+                # All percentages to 8 decimal places, sum = 1.00000000
                 base_allocations = {
-                    '5yr': 0.07,           # 7.000000%
-                    '7yr': 0.01926036,     # 1.926036%
-                    '15yr': 0.27500630,    # 27.500630%
-                    '27.5yr': 0.00,
-                    '39yr': 0.60688776,    # 60.688776%
+                    '5yr': 0.07000000,     # 7.00000000%
+                    '7yr': 0.01926036,     # 1.92603600%
+                    '15yr': 0.27500630,    # 27.50063000%
+                    '27.5yr': 0.00000000,
+                    '39yr': 0.63573334,    # 63.57333400% (adjusted for exact 100%)
                 }
             # Use base allocations directly (Excel percentages are already final)
             # Age adjustments are already baked into the Excel-matched percentages

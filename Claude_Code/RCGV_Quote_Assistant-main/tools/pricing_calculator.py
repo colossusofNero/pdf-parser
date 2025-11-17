@@ -204,13 +204,9 @@ def calculate_quote_pricing(
     cost_per_property = linear_bid * num_properties
     multi_properties_bid = cost_per_property
     
-    # Determine Final Bid
-    minimum_of_three = min(linear_bid, logistic_bid, multi_properties_bid)
-    
-    if minimum_of_three < multi_properties_bid:
-        final_bid = multi_properties_bid
-    else:
-        final_bid = minimum_of_three
+    # Determine Final Bid - Use minimum of all three bids
+    # This ensures logistic bid caps fees for very large properties
+    final_bid = min(linear_bid, logistic_bid, multi_properties_bid)
     
     # Apply floor
     final_bid = max(final_bid, 100)

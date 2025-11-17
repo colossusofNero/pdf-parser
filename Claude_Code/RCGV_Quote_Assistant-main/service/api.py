@@ -493,7 +493,13 @@ def quote_document(
 
         # Generate depreciation schedules - ENGINE-BACKED (no stubs)
         # Uses engine's calculate_current_year_depreciation + CapEx/ADS/QIP logic
-        schedule_years = 10  # Standard 10-year projection
+        # Use full depreciation period: Need extra year for mid-month/mid-quarter convention
+        # 29 years for 27.5yr (accounts for mid-month convention in first/last year)
+        # 41 years for 39yr (accounts for mid-month convention in first/last year)
+        if css_property_type == "multi-family":
+            schedule_years = 29  # 27.5-year residential + convention
+        else:
+            schedule_years = 41  # 39-year commercial + convention
 
         # Generate TWO schedules:
         # 1. WITH bonus depreciation (for bonus_dep column)
