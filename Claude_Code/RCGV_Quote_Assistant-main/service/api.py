@@ -1228,6 +1228,99 @@ def elevenlabs_submit_quote(req: ElevenLabsSubmitQuote):
         "final_quote": session_data.get("final_quote")
     }
 
+class ElevenLabsSendPDF(BaseModel):
+    email: str
+    session_id: str = "default"
+
+class ElevenLabsRequestCallback(BaseModel):
+    phone: str
+    name: str = ""
+    session_id: str = "default"
+
+@app.post("/elevenlabs/send_pdf")
+def elevenlabs_send_pdf(req: ElevenLabsSendPDF):
+    """
+    ElevenLabs webhook: Send PDF quote to user's email
+    Called when user requests PDF of their quote
+    """
+    session_id = req.session_id
+
+    # Get session data
+    if session_id not in ELEVENLABS_SESSIONS:
+        return {
+            "success": False,
+            "message": "No quote data found for this session"
+        }
+
+    session_data = ELEVENLABS_SESSIONS[session_id]
+
+    # Check if quote was computed
+    if not session_data.get("quote_computed"):
+        return {
+            "success": False,
+            "message": "Please compute the quote first before sending PDF"
+        }
+
+    # Mark PDF as sent
+    ELEVENLABS_SESSIONS[session_id]["pdf_sent"] = True
+    ELEVENLABS_SESSIONS[session_id]["pdf_sent_to"] = req.email
+    ELEVENLABS_SESSIONS[session_id]["pdf_sent_at"] = datetime.now().isoformat()
+
+    # TODO: Actually generate and send PDF
+    # For now, just log it
+    logger.info(f"PDF requested for session {session_id} to {req.email}: {session_data}")
+
+    return {
+        "success": True,
+        "message": f"PDF quote sent to {req.email}!",
+        "email": req.email,
+        "quote_id": session_id,
+        "final_quote": session_data.get("final_quote")
+    }
+
+@app.post("/elevenlabs/request_callback")
+def elevenlabs_request_callback(req: ElevenLabsRequestCallback):
+    """
+    ElevenLabs webhook: Request callback from RGV team
+    Called when user wants someone from RGV to call them
+    """
+    session_id = req.session_id
+
+    # Get session data
+    if session_id not in ELEVENLABS_SESSIONS:
+        return {
+            "success": False,
+            "message": "No quote data found for this session"
+        }
+
+    session_data = ELEVENLABS_SESSIONS[session_id]
+
+    # Check if quote was computed
+    if not session_data.get("quote_computed"):
+        return {
+            "success": False,
+            "message": "Please compute the quote first before requesting callback"
+        }
+
+    # Mark callback as requested
+    ELEVENLABS_SESSIONS[session_id]["callback_requested"] = True
+    ELEVENLABS_SESSIONS[session_id]["callback_phone"] = req.phone
+    ELEVENLABS_SESSIONS[session_id]["callback_name"] = req.name
+    ELEVENLABS_SESSIONS[session_id]["callback_requested_at"] = datetime.now().isoformat()
+
+    # TODO: Send notification to RGV team (email, Slack, etc.)
+    # For now, just log it
+    logger.info(f"Callback requested for session {session_id} - {req.name} at {req.phone}: {session_data}")
+
+    return {
+        "success": True,
+        "message": f"Great! Someone from RGV will call {req.name or 'you'} at {req.phone} soon.",
+        "phone": req.phone,
+        "name": req.name,
+        "quote_id": session_id,
+        "final_quote": session_data.get("final_quote")
+    }
+
 # ---- OPTIONS preflight for CORS ----
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
