@@ -1079,6 +1079,155 @@ def healthz():
     """Simple health check endpoint for Vercel and other monitoring"""
     return {"status": "ok", "version": "2.1.0"}
 
+# -------- ElevenLabs Conversational AI Webhooks --------
+# Session storage for ElevenLabs conversations
+ELEVENLABS_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+class ElevenLabsUpdateField(BaseModel):
+    field_name: str
+    field_value: str
+    session_id: str = "default"
+
+class ElevenLabsComputeQuote(BaseModel):
+    purchase_price: float
+    zip_code: str
+    land_value: float
+    known_land_value: bool
+    property_type: str = "Multi-Family"
+    rush: str = "No Rush"
+    premium: str = "No"
+    referral: str = "No"
+    session_id: str = "default"
+
+class ElevenLabsSubmitQuote(BaseModel):
+    confirm: bool = True
+    session_id: str = "default"
+
+@app.post("/elevenlabs/update_field")
+def elevenlabs_update_field(req: ElevenLabsUpdateField):
+    """
+    ElevenLabs webhook: Update a quote field
+    Called when AI extracts information from conversation
+    """
+    session_id = req.session_id
+
+    # Initialize session if needed
+    if session_id not in ELEVENLABS_SESSIONS:
+        ELEVENLABS_SESSIONS[session_id] = {}
+
+    # Convert value to proper type
+    field_name = req.field_name
+    field_value = req.field_value
+
+    # Type conversions
+    if field_name in ["purchase_price", "land_value"]:
+        field_value = float(field_value)
+    elif field_name == "known_land_value":
+        field_value = field_value.lower() in ["true", "1", "yes"]
+
+    # Store in session
+    ELEVENLABS_SESSIONS[session_id][field_name] = field_value
+
+    return {
+        "success": True,
+        "field_name": field_name,
+        "field_value": field_value,
+        "current_data": ELEVENLABS_SESSIONS[session_id]
+    }
+
+@app.post("/elevenlabs/compute_quote")
+def elevenlabs_compute_quote(req: ElevenLabsComputeQuote):
+    """
+    ElevenLabs webhook: Compute the quote
+    Called when AI has all required information
+    """
+    session_id = req.session_id
+
+    try:
+        # Build quote inputs
+        qi = QuoteInputs(
+            purchase_price=req.purchase_price,
+            zip_code=int(req.zip_code),
+            land_value=req.land_value,
+            known_land_value=req.known_land_value,
+            property_type=req.property_type,
+            rush=req.rush,
+            premium=req.premium,
+            referral=req.referral
+        )
+
+        # Compute quote using new calculator
+        base, final, breakdown = compute_with_new_calculator(qi)
+
+        # Store in session
+        if session_id not in ELEVENLABS_SESSIONS:
+            ELEVENLABS_SESSIONS[session_id] = {}
+
+        ELEVENLABS_SESSIONS[session_id]["base_quote"] = base
+        ELEVENLABS_SESSIONS[session_id]["final_quote"] = final
+        ELEVENLABS_SESSIONS[session_id]["quote_computed"] = True
+        ELEVENLABS_SESSIONS[session_id]["breakdown"] = breakdown
+
+        return {
+            "success": True,
+            "base_quote": base,
+            "final_quote": final,
+            "breakdown": breakdown,
+            "message": f"Quote computed: Base ${base:,.2f}, Final ${final:,.2f}"
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Failed to compute quote: {str(e)}"
+        }
+
+@app.post("/elevenlabs/submit_quote")
+def elevenlabs_submit_quote(req: ElevenLabsSubmitQuote):
+    """
+    ElevenLabs webhook: Submit the quote
+    Called when user confirms they want to submit
+    """
+    session_id = req.session_id
+
+    if not req.confirm:
+        return {
+            "success": False,
+            "message": "Submission not confirmed"
+        }
+
+    # Get session data
+    if session_id not in ELEVENLABS_SESSIONS:
+        return {
+            "success": False,
+            "message": "No quote data found for this session"
+        }
+
+    session_data = ELEVENLABS_SESSIONS[session_id]
+
+    # Check if quote was computed
+    if not session_data.get("quote_computed"):
+        return {
+            "success": False,
+            "message": "Please compute the quote first before submitting"
+        }
+
+    # Mark as submitted
+    ELEVENLABS_SESSIONS[session_id]["quote_submitted"] = True
+    ELEVENLABS_SESSIONS[session_id]["submitted_at"] = datetime.now().isoformat()
+
+    # TODO: Send to Supabase or email notification
+    # For now, just log it
+    logger.info(f"Quote submitted for session {session_id}: {session_data}")
+
+    return {
+        "success": True,
+        "message": "Quote submitted successfully! Our team will review and contact you soon.",
+        "quote_id": session_id,
+        "final_quote": session_data.get("final_quote")
+    }
+
 # ---- OPTIONS preflight for CORS ----
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
