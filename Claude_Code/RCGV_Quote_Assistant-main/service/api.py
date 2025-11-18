@@ -1083,6 +1083,49 @@ def healthz():
 # Session storage for ElevenLabs conversations
 ELEVENLABS_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
+class ElevenLabsSetInputs(BaseModel):
+    """Dynamic form field updates - agent can set any number of fields"""
+    session_id: str = "default"
+
+    # Contact Information
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    owner: str | None = None
+
+    # Property Identity
+    address: str | None = None
+    property_type: str | None = None
+
+    # Core Pricing Inputs (REQUIRED for calculation)
+    purchase_price: float | None = None
+    zip_code: int | None = None
+    land_value: float | None = None
+    land_mode: str | None = None  # "percent" or "dollars"
+
+    # Deal Timing
+    purchase_date: str | None = None
+    tax_year: int | None = None
+    tax_deadline: str | None = None
+
+    # Investment Details
+    capex: str | None = None  # "Yes" or "No"
+    capex_amount: float | None = None
+    capex_date: str | None = None
+    is_1031: str | None = None  # "Yes" or "No"
+    pad_deferred_growth: float | None = None
+
+    # Physical Details
+    year_built: int | None = None
+    sqft_building: float | None = None
+    acres_land: float | None = None
+    floors: int | None = None
+    multiple_properties: int | None = None
+
+    # Service Options
+    rush: str | None = None
+    price_override: float | None = None
+
 class ElevenLabsUpdateField(BaseModel):
     field_name: str
     field_value: str
@@ -1102,6 +1145,66 @@ class ElevenLabsComputeQuote(BaseModel):
 class ElevenLabsSubmitQuote(BaseModel):
     confirm: bool = True
     session_id: str = "default"
+
+class ElevenLabsSendPDF(BaseModel):
+    email: str
+    session_id: str = "default"
+
+class ElevenLabsRequestCallback(BaseModel):
+    phone: str
+    name: str = ""
+    session_id: str = "default"
+
+@app.post("/elevenlabs/set_inputs")
+def elevenlabs_set_inputs(req: ElevenLabsSetInputs):
+    """
+    ElevenLabs webhook: Update multiple form fields dynamically
+    Agent can set any fields it has collected from the conversation
+    """
+    session_id = req.session_id
+
+    # Initialize session if needed
+    if session_id not in ELEVENLABS_SESSIONS:
+        ELEVENLABS_SESSIONS[session_id] = {}
+
+    # Update all non-None fields
+    updates = {}
+    for field, value in req.model_dump(exclude={"session_id"}).items():
+        if value is not None:
+            ELEVENLABS_SESSIONS[session_id][field] = value
+            updates[field] = value
+
+    # Check if we have minimum required fields for computation
+    session_data = ELEVENLABS_SESSIONS[session_id]
+    required_fields = ["purchase_price", "zip_code", "land_value", "land_mode"]
+    has_required = all(field in session_data and session_data[field] is not None for field in required_fields)
+
+    return {
+        "success": True,
+        "updated_fields": updates,
+        "current_data": session_data,
+        "can_compute_quote": has_required,
+        "missing_required": [f for f in required_fields if f not in session_data or session_data[f] is None]
+    }
+
+@app.get("/elevenlabs/session/{session_id}")
+def elevenlabs_get_session(session_id: str):
+    """
+    Get current session data for frontend sync
+    Frontend polls this endpoint to update form fields in real-time
+    """
+    if session_id not in ELEVENLABS_SESSIONS:
+        return {
+            "success": False,
+            "data": {},
+            "message": "Session not found"
+        }
+
+    return {
+        "success": True,
+        "data": ELEVENLABS_SESSIONS[session_id],
+        "session_id": session_id
+    }
 
 @app.post("/elevenlabs/update_field")
 def elevenlabs_update_field(req: ElevenLabsUpdateField):
@@ -1228,15 +1331,6 @@ def elevenlabs_submit_quote(req: ElevenLabsSubmitQuote):
         "final_quote": session_data.get("final_quote")
     }
 
-class ElevenLabsSendPDF(BaseModel):
-    email: str
-    session_id: str = "default"
-
-class ElevenLabsRequestCallback(BaseModel):
-    phone: str
-    name: str = ""
-    session_id: str = "default"
-
 @app.post("/elevenlabs/send_pdf")
 def elevenlabs_send_pdf(req: ElevenLabsSendPDF):
     """
@@ -1319,6 +1413,24 @@ def elevenlabs_request_callback(req: ElevenLabsRequestCallback):
         "name": req.name,
         "quote_id": session_id,
         "final_quote": session_data.get("final_quote")
+    }
+
+@app.get("/elevenlabs/session/{session_id}")
+def get_elevenlabs_session(session_id: str):
+    """
+    Get current session state for real-time form updates
+    Frontend polls this to sync form with AI conversation
+    """
+    if session_id not in ELEVENLABS_SESSIONS:
+        return {
+            "success": False,
+            "message": "Session not found",
+            "data": {}
+        }
+
+    return {
+        "success": True,
+        "data": ELEVENLABS_SESSIONS[session_id]
     }
 
 # ---- OPTIONS preflight for CORS ----

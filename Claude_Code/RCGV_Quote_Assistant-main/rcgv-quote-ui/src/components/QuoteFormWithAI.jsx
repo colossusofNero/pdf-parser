@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import ElevenLabsWidget from "./ElevenLabsWidget";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || "";
 console.log("🔧 DEBUG: API Base URL =", apiBase || "(empty - will use relative URLs)");
 console.log("🔧 DEBUG: All env vars =", import.meta.env);
+
+// Generate unique session ID for ElevenLabs
+const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 const EXAMPLE = {
   // Contact
@@ -63,6 +67,9 @@ export default function QuoteFormWithAI() {
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
+  // ElevenLabs session ID for real-time form sync
+  const [sessionId] = useState(() => generateSessionId());
+
   // AI state - keep your existing AI code
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMsgs, setAiMsgs] = useState([]);
@@ -102,7 +109,7 @@ export default function QuoteFormWithAI() {
     }
   }, []);
 
-  // Function to speak text
+  // Function to speak text with high-quality voice
   const speak = (text) => {
     if (!voiceEnabled || !('speechSynthesis' in window)) return;
 
@@ -110,9 +117,51 @@ export default function QuoteFormWithAI() {
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+
+    // Try to find a high-quality natural voice
+    const voices = window.speechSynthesis.getVoices();
+
+    // Prefer these voice names (in order of priority)
+    const preferredVoices = [
+      'Google US English',
+      'Microsoft Zira - English (United States)',
+      'Samantha',
+      'Alex',
+      'Microsoft David - English (United States)',
+      'Google UK English Female',
+      'Karen',
+      'Victoria'
+    ];
+
+    // Find the first available preferred voice
+    let selectedVoice = null;
+    for (const prefName of preferredVoices) {
+      selectedVoice = voices.find(v => v.name.includes(prefName));
+      if (selectedVoice) break;
+    }
+
+    // Fallback: find any English female or male voice
+    if (!selectedVoice) {
+      selectedVoice = voices.find(v =>
+        (v.lang.startsWith('en') && v.name.toLowerCase().includes('female')) ||
+        (v.lang.startsWith('en') && v.name.toLowerCase().includes('zira')) ||
+        (v.lang.startsWith('en') && v.name.toLowerCase().includes('samantha'))
+      );
+    }
+
+    // Last fallback: any English voice
+    if (!selectedVoice) {
+      selectedVoice = voices.find(v => v.lang.startsWith('en'));
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+
+    // Natural speech settings
+    utterance.rate = 0.95;  // Slightly slower for clarity
+    utterance.pitch = 1.0;   // Natural pitch
+    utterance.volume = 1.0;  // Full volume
 
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -120,6 +169,18 @@ export default function QuoteFormWithAI() {
 
     window.speechSynthesis.speak(utterance);
   };
+
+  // Load voices when they become available
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      // Load voices
+      window.speechSynthesis.getVoices();
+      // Some browsers need this event
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+  }, []);
 
   // Toggle voice recording
   const toggleVoiceRecording = () => {
@@ -370,117 +431,21 @@ export default function QuoteFormWithAI() {
         </div>
       </div>
 
-      {/* AI toggle (no-print) */}
-      <button
-        onClick={() => setAiOpen((v) => !v)}
-        className="no-print fixed bottom-8 right-8 z-40 text-white rounded-full p-4 shadow-2xl transition-all hover:scale-110 border-2 border-white"
-        style={{ backgroundColor: "#558ca5" }}
-        aria-label="Toggle AI">
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
-        </svg>
-      </button>
-
-      {/* AI panel (no-print) */}
-      {aiOpen && (
-        <div className="no-print fixed bottom-28 right-8 z-50 w-96 h-[600px] bg-white rounded-lg shadow-2xl flex flex-col border-2" style={{ borderColor: "#558ca5" }}>
-          {/* Header with voice controls */}
-          <div className="p-3 border-b flex items-center justify-between" style={{ backgroundColor: "#f8f9fa" }}>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold" style={{ color: "#232940" }}>AI Quote Assistant</span>
-              {isSpeaking && (
-                <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 animate-pulse">
-                  🔊 Speaking
-                </span>
-              )}
-              {isListening && (
-                <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 animate-pulse">
-                  🎤 Listening
-                </span>
-              )}
-            </div>
-            <button
-              onClick={() => setVoiceEnabled(!voiceEnabled)}
-              className="text-xs px-2 py-1 rounded hover:bg-gray-200"
-              title={voiceEnabled ? "Disable voice" : "Enable voice"}
-            >
-              {voiceEnabled ? "🔊 Voice On" : "🔇 Voice Off"}
-            </button>
-          </div>
-
-          {/* Welcome message if no messages */}
-          {aiMsgs.length === 0 && (
-            <div className="p-4 text-center text-gray-500 text-sm">
-              <div className="mb-2">👋 Hi! I'm your AI assistant.</div>
-              <div className="mb-2">I can help you:</div>
-              <ul className="text-left space-y-1 max-w-xs mx-auto">
-                <li>• Fill out the quote form</li>
-                <li>• Answer questions about pricing</li>
-                <li>• Compute and submit your quote</li>
-              </ul>
-              <div className="mt-3 text-xs">
-                💬 Type or 🎤 speak to get started
-              </div>
-            </div>
-          )}
-
-          {/* Message display */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {aiMsgs.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
-                <div className={`inline-block px-3 py-2 rounded ${m.role === "user" ? "bg-blue-100 text-blue-900" : "bg-gray-100 text-gray-900"} max-w-[90%]`}>
-                  {m.content}
-                </div>
-              </div>
-            ))}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Input area with microphone */}
-          <div className="p-3 border-t flex gap-2">
-            <button
-              onClick={toggleVoiceRecording}
-              disabled={aiBusy || isSpeaking}
-              className={`px-3 py-2 rounded text-white transition-all ${
-                isListening
-                  ? "bg-red-500 animate-pulse"
-                  : "hover:scale-105"
-              }`}
-              style={{ backgroundColor: isListening ? "#ef4444" : "#558ca5" }}
-              title={isListening ? "Stop recording" : "Start voice input"}
-            >
-              {isListening ? (
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <rect x="6" y="6" width="8" height="8" rx="1"/>
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-                </svg>
-              )}
-            </button>
-            <input
-              className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
-              value={aiInput}
-              onChange={(e) => setAiInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendAi()}
-              placeholder={isListening ? "Listening..." : "Type or click mic to speak..."}
-              disabled={isListening}
-            />
-            <button
-              onClick={sendAi}
-              disabled={aiBusy || isListening || !aiInput.trim()}
-              className="px-4 py-2 rounded text-white font-medium transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: "#558ca5" }}
-            >
-              {aiBusy ? "..." : "Send"}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Main */}
       <div className="w-full max-w-5xl mx-auto p-6">
+        {/* Use Example Data Button - Moved to top */}
+        <div className="no-print flex justify-center mb-6">
+          <button
+            type="button"
+            onClick={() => setForm(EXAMPLE)}
+            className="w-full max-w-md px-8 py-3 rounded-lg border-2 bg-white hover:bg-gray-50 transition font-semibold"
+            style={{ borderColor: '#dc3545', color: '#dc3545' }}
+          >
+            Use Example Data
+          </button>
+        </div>
+
         <form onSubmit={onSubmit} className="no-print space-y-4">
           {/* Contact Information */}
           <div className="p-4 rounded-lg" style={{ backgroundColor: '#f8f9fa' }}>
@@ -826,46 +791,17 @@ export default function QuoteFormWithAI() {
             </div>
           </div>
 
-          {/* Action Buttons - Moved here */}
-          <div className="flex flex-wrap gap-3 items-center">
-            <button 
-              type="button" 
-              onClick={() => setForm(EXAMPLE)} 
-              className="px-6 py-2.5 rounded-lg border-2 bg-white hover:bg-gray-50 transition text-sm font-medium"
-              style={{ borderColor: '#dc3545', color: '#dc3545' }}
-            >
-              Use Example Data
-            </button>
-            <button 
+          {/* Compute Quote Button - Centered */}
+          <div className="flex justify-center">
+            <button
               type="submit"
-              className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md" 
+              className="w-full max-w-md px-8 py-3 rounded-lg text-white disabled:opacity-50 transition font-semibold shadow-md"
               style={{ backgroundColor: '#558ca5' }}
               disabled={busy}
             >
               {busy ? "Computing…" : "Compute Quote"}
             </button>
-            
-            {/* Submit for Review Button */}
-            {result && (
-              <button 
-                type="button"
-                onClick={submitForReview}
-                className="px-6 py-2.5 rounded-lg text-white disabled:opacity-50 transition text-sm font-medium shadow-md ml-auto" 
-                style={{ backgroundColor: '#28a745' }}
-                disabled={submitting}
-              >
-                {submitting ? "Submitting…" : "✓ Submit & Request a Contact"}
-              </button>
-            )}
           </div>
-
-          {/* Success message */}
-          {submitSuccess && (
-            <div className="p-4 rounded-xl bg-green-50 border-2 border-green-500 text-green-800 text-sm font-medium flex items-center gap-2">
-              <span className="text-2xl">✓</span>
-              <span>Quote submitted successfully! We'll contact you soon at {form.email}.</span>
-            </div>
-          )}
 
           {/* Internal Options */}
           <div className="border-2 p-4 rounded-lg" style={{ backgroundColor: '#fff3cd', borderColor: '#ffc107' }}>
@@ -891,7 +827,33 @@ export default function QuoteFormWithAI() {
 
         {/* PDF Display */}
         <PDFDisplay result={result} form={form} />
+
+        {/* Submit & Request Button - Moved below quote */}
+        {result && (
+          <div className="no-print flex justify-center mt-6">
+            <button
+              type="button"
+              onClick={submitForReview}
+              className="w-full max-w-md px-8 py-3 rounded-lg text-white disabled:opacity-50 transition font-semibold shadow-md"
+              style={{ backgroundColor: '#28a745' }}
+              disabled={submitting}
+            >
+              {submitting ? "Submitting…" : "✓ Submit & Request a Contact"}
+            </button>
+          </div>
+        )}
+
+        {/* Success message */}
+        {submitSuccess && (
+          <div className="no-print p-4 rounded-xl bg-green-50 border-2 border-green-500 text-green-800 font-medium flex items-center justify-center gap-2 mt-4">
+            <span className="text-2xl">✓</span>
+            <span>Quote submitted successfully! We'll contact you soon at {form.email}.</span>
+          </div>
+        )}
       </div>
+
+      {/* ElevenLabs Voice AI Widget - Always visible */}
+      <ElevenLabsWidget form={form} setForm={setForm} sessionId={sessionId} />
     </div>
   );
 }
