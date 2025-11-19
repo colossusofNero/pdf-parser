@@ -432,6 +432,13 @@ export default function QuoteFormWithAI() {
       </div>
 
 
+      {/* Version Indicator */}
+      <div className="no-print w-full max-w-5xl mx-auto px-6 pt-4">
+        <div className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full border border-blue-300">
+          Version: Nov-18-2025-ElevenLabs-Widget-Enabled | Build: {new Date().toISOString().split('T')[0]}
+        </div>
+      </div>
+
       {/* Main */}
       <div className="w-full max-w-5xl mx-auto p-6">
         {/* Use Example Data Button - Moved to top */}
