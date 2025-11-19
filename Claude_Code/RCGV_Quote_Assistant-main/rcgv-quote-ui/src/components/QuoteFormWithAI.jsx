@@ -435,7 +435,7 @@ export default function QuoteFormWithAI() {
       {/* Main */}
       <div className="w-full max-w-5xl mx-auto p-6">
         {/* Use Example Data Button - Moved to top */}
-        <div className="no-print flex justify-center mb-6">
+        <div className="no-print mb-6">
           <button
             type="button"
             onClick={() => setForm(EXAMPLE)}
@@ -791,8 +791,8 @@ export default function QuoteFormWithAI() {
             </div>
           </div>
 
-          {/* Compute Quote Button - Centered */}
-          <div className="flex justify-center">
+          {/* Compute Quote Button - Left justified */}
+          <div>
             <button
               type="submit"
               className="w-full max-w-md px-8 py-3 rounded-lg text-white disabled:opacity-50 transition font-semibold shadow-md"
