@@ -32,6 +32,11 @@ class QuoteInputs(BaseModel):
     land_value: float                     # percent if known_land_value=False, dollars if True
     known_land_value: bool = False
 
+    # Optional contact information (for notifications)
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
     # Optional business fields (kept for future use/validation)
     property_type: Optional[PropertyType] = None
     sqft_building: Optional[float] = None

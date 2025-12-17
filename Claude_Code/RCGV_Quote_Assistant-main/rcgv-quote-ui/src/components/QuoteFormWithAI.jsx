@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import ElevenLabsWidget from "./ElevenLabsWidget";
+// import ElevenLabsWidget from "./ElevenLabsWidget";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || "";
 console.log("🔧 DEBUG: API Base URL =", apiBase || "(empty - will use relative URLs)");
@@ -10,13 +10,13 @@ console.log("🔧 DEBUG: All env vars =", import.meta.env);
 const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 const EXAMPLE = {
-  // Contact
-  name: "Alex Martinez",
-  email: "alex@example.com",
-  phone: "555-123-4567",
-  // Property
-  owner: "RCG Holdings LLC",
-  address: "12345 N 84th St, Scottsdale, AZ 85260",
+  // Contact (Sample Data)
+  name: "Sample Client Name",
+  email: "sample@example.com",
+  phone: "555-000-0000",
+  // Property (Sample Data)
+  owner: "Sample Property Owner LLC",
+  address: "123 Sample Street, Sample City, AZ 85000",
   zip_code: "85260",
   property_type: "Multi-Family",
   year_built: 2005,
@@ -59,7 +59,7 @@ const pct = (v) => {
 };
 
 export default function QuoteFormWithAI() {
-  const [form, setForm] = useState(EXAMPLE);
+  const [form, setForm] = useState({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
@@ -306,7 +306,10 @@ export default function QuoteFormWithAI() {
         capex_amount: form.capex === "Yes" ? num(form.capex_amount) : 0,
         capex_date: form.capex === "Yes" && form.capex_date ? form.capex_date : null,
         is_1031: form.is_1031,
-        pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0
+        pad_deferred_growth: form.is_1031 === "Yes" ? num(form.pad_deferred_growth) : 0,
+        name: form.name,
+        email: form.email,
+        phone: form.phone
       };
 
       const fullUrl = `${apiBase}/quote/document`;
@@ -325,9 +328,13 @@ export default function QuoteFormWithAI() {
       console.log("📋 Full API Response:", quoteResult);
       setResult(quoteResult);
 
-      // Auto-save to Supabase as draft
-      await saveQuoteToSupabase(form, quoteResult, 'draft');
-      
+      // Auto-save to Supabase as draft (non-blocking - don't fail if this errors)
+      try {
+        await saveQuoteToSupabase(form, quoteResult, 'draft');
+      } catch (saveError) {
+        console.warn('⚠️ Failed to auto-save to Supabase (quote still computed successfully):', saveError);
+      }
+
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
@@ -348,18 +355,25 @@ export default function QuoteFormWithAI() {
     
     try {
       if (!result) {
-        throw new Error("Please compute a quote first before submitting for review.");
+        throw new Error("Please generate an estimate first before submitting for review.");
       }
 
       // Save/update with submitted status
       await saveQuoteToSupabase(form, result, 'submitted');
       setSubmitSuccess(true);
-      
+      setErr(""); // Clear any previous errors
+
       // Optional: Show success message for a few seconds
       setTimeout(() => setSubmitSuccess(false), 5000);
-      
+
     } catch (e) {
-      setErr(String(e.message || e));
+      const errorMsg = e.message || String(e);
+      // Provide a more user-friendly message for database errors
+      if (errorMsg.includes('401') || errorMsg.includes('Unauthorized') || errorMsg.includes('JWT')) {
+        setErr('⚠️ Submission failed due to database permissions. Your estimate was generated successfully, but we couldn\'t save your contact request. Please try again or contact support.');
+      } else {
+        setErr(`Submission error: ${errorMsg}`);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -411,6 +425,30 @@ export default function QuoteFormWithAI() {
     }
   }
 
+  const handlePrint = () => {
+    // Save original title
+    const originalTitle = document.title;
+
+    // Format filename: Quote_ClientName_PropertyAddress_QuoteDate.pdf
+    const clientName = (form.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+    const propertyAddress = (form.address || 'Property').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const quoteDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const filename = `Quote_${clientName}_${propertyAddress}_${quoteDate}`;
+
+    // Set document title (browsers use this as default PDF filename)
+    document.title = filename;
+
+    // Restore original title after print dialog closes
+    const restoreTitle = () => {
+      document.title = originalTitle;
+      window.removeEventListener('afterprint', restoreTitle);
+    };
+    window.addEventListener('afterprint', restoreTitle);
+
+    // Open print dialog
+    window.print();
+  };
+
   const onSubmit = (e) => {
     e.preventDefault();
     compute();
@@ -425,31 +463,24 @@ export default function QuoteFormWithAI() {
             <img src="https://i.imgur.com/CzRehap.jpeg" alt="RCG" className="h-20 w-20 object-contain" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold" style={{ color: "#232940" }}>RCGV Quote Assistant</h1>
+            <h1 className="text-3xl font-bold" style={{ color: "#232940" }}>RCGV Estimate Tool</h1>
             <p className="text-base" style={{ color: "#558ca5" }}>Cost Segregation Specialists</p>
           </div>
         </div>
       </div>
 
 
-      {/* Version Indicator */}
-      <div className="no-print w-full max-w-5xl mx-auto px-6 pt-4">
-        <div className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full border border-blue-300">
-          Version: Nov-18-2025-ElevenLabs-Widget-Enabled | Build: {new Date().toISOString().split('T')[0]}
-        </div>
-      </div>
-
       {/* Main */}
       <div className="w-full max-w-5xl mx-auto p-6">
-        {/* Use Example Data Button - Moved to top */}
+        {/* Use Sample Data Button - Moved to top */}
         <div className="no-print mb-6">
           <button
             type="button"
             onClick={() => setForm(EXAMPLE)}
             className="w-full max-w-md px-8 py-3 rounded-lg border-2 bg-white hover:bg-gray-50 transition font-semibold"
-            style={{ borderColor: '#dc3545', color: '#dc3545' }}
+            style={{ borderColor: '#558ca5', color: '#558ca5' }}
           >
-            Use Example Data
+            Use Sample Data
           </button>
         </div>
 
@@ -806,14 +837,14 @@ export default function QuoteFormWithAI() {
               style={{ backgroundColor: '#558ca5' }}
               disabled={busy}
             >
-              {busy ? "Computing…" : "Compute Quote"}
+              {busy ? "Computing…" : "Generate Estimate"}
             </button>
           </div>
 
           {/* Internal Options */}
           <div className="border-2 p-4 rounded-lg" style={{ backgroundColor: '#fff3cd', borderColor: '#ffc107' }}>
             <h3 className="font-bold text-lg mb-3 flex items-center gap-2" style={{ color: '#232940' }}>
-              <span>⚠️ Internal Use Only</span>
+              <span>⚠️ Educational & Pre-Qualification Use Only</span>
             </h3>
             <div>
               <label className="block text-sm font-medium mb-1">Price Override (optional)</label>
@@ -833,11 +864,11 @@ export default function QuoteFormWithAI() {
         </form>
 
         {/* PDF Display */}
-        <PDFDisplay result={result} form={form} />
+        <PDFDisplay result={result} form={form} handlePrint={handlePrint} />
 
         {/* Submit & Request Button - Moved below quote */}
         {result && (
-          <div className="no-print flex justify-center mt-6">
+          <div className="no-print flex flex-col items-center mt-6 gap-4">
             <button
               type="button"
               onClick={submitForReview}
@@ -847,29 +878,37 @@ export default function QuoteFormWithAI() {
             >
               {submitting ? "Submitting…" : "✓ Submit & Request a Contact"}
             </button>
-          </div>
-        )}
 
-        {/* Success message */}
-        {submitSuccess && (
-          <div className="no-print p-4 rounded-xl bg-green-50 border-2 border-green-500 text-green-800 font-medium flex items-center justify-center gap-2 mt-4">
-            <span className="text-2xl">✓</span>
-            <span>Quote submitted successfully! We'll contact you soon at {form.email}.</span>
+            {/* Submission error message - shown right below submit button */}
+            {err && !submitSuccess && (
+              <div className="w-full max-w-md p-4 rounded-xl bg-red-50 border-2 border-red-500 text-red-700 font-medium flex items-start gap-2">
+                <span className="text-xl flex-shrink-0">⚠️</span>
+                <span>{err}</span>
+              </div>
+            )}
+
+            {/* Success message */}
+            {submitSuccess && (
+              <div className="w-full max-w-md p-4 rounded-xl bg-green-50 border-2 border-green-500 text-green-800 font-medium flex items-center gap-2">
+                <span className="text-2xl">✓</span>
+                <span>Estimate request submitted successfully! We'll contact you soon at {form.email}.</span>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* ElevenLabs Voice AI Widget - Always visible */}
-      <ElevenLabsWidget form={form} setForm={setForm} sessionId={sessionId} />
+      {/* <ElevenLabsWidget form={form} setForm={setForm} sessionId={sessionId} /> */}
     </div>
   );
 }
 
 /* ---------------- PDF Display Component ---------------- */
-function PDFDisplay({ result, form }) {
+function PDFDisplay({ result, form, handlePrint }) {
   if (!result) return (
     <div className="bg-white p-4 rounded-lg shadow-sm text-center text-gray-400">
-      Fill the form and click <strong>Compute Quote</strong> to generate your PDF.
+      Fill the form and click <strong>Generate Estimate</strong> to create your preliminary estimate.
     </div>
   );
 
@@ -927,21 +966,47 @@ function PDFDisplay({ result, form }) {
               <img src="https://i.imgur.com/CzRehap.jpeg" alt="RCG Logo" className="h-10 w-10 object-contain" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Cost Segregation Quote</h1>
+              <h1 className="text-2xl font-bold">Preliminary Cost Segregation Estimate</h1>
               <p className="text-blue-200 text-xs tracking-wider">VALUATION</p>
             </div>
+          </div>
+        </div>
+
+        {/* Global Disclaimer - Top Priority */}
+        <div className="bg-yellow-100 border-t-4 border-b-4 border-yellow-600 px-4 py-2">
+          <div className="text-center">
+            <div className="text-sm font-bold text-gray-900 mb-1">⚠️ DISCLAIMER ⚠️</div>
+            <p className="text-[10px] text-gray-800 leading-tight">
+              This tool provides <strong>illustrative cost segregation estimates for educational and pre-qualification purposes only</strong>.
+              It does not provide tax, legal, or accounting advice. Consult a qualified professional for your specific situation.
+            </p>
           </div>
         </div>
 
         {/* Validity */}
         <div className="bg-yellow-50 border-b-2 border-yellow-300 px-4 py-1.5 flex justify-between items-center text-xs">
           <div>
-            <span className="font-semibold text-gray-700">Quote Date:</span>
+            <span className="font-semibold text-gray-700">Estimate Date:</span>
             <span className="ml-2 text-gray-900">{now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>
           </div>
           <div className="bg-red-100 border border-red-300 px-2 py-0.5 rounded-full">
             <span className="font-semibold text-red-700">Valid Until:</span>
             <span className="ml-2 text-red-900 font-bold">{expires.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>
+          </div>
+        </div>
+
+        {/* Disclaimer Banner */}
+        <div className="bg-blue-50 border-2 border-blue-400 px-4 py-3 mx-4 mt-4 rounded-lg">
+          <div className="flex items-start gap-2">
+            <span className="text-xl flex-shrink-0">⚠️</span>
+            <div className="text-[10px] text-gray-800">
+              <div className="font-bold text-blue-900 mb-1">PRELIMINARY ESTIMATE — FOR ILLUSTRATIVE PURPOSES ONLY</div>
+              <p className="leading-relaxed">
+                This estimate uses sample assumptions for demonstration and pre-qualification purposes.
+                Actual results vary based on engineering analysis, property specifics, tax position, and IRS guidance.
+                This is not a final quote or tax advice. Final pricing subject to engagement review and professional analysis.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -1010,12 +1075,12 @@ function PDFDisplay({ result, form }) {
                 
                 <div className="flex justify-between"><span className="font-semibold">Service Fee:</span><span>{money(baseQuote)}</span></div>
                 <div className="flex justify-between"><span className="font-semibold">Rush Fee:</span><span>{form.rush !== "No Rush" ? form.rush : "None"}</span></div>
-                <div className="flex justify-between border-t pt-1.5 mb-2"><span className="font-semibold">Final Quote:</span><span className="font-bold text-blue-600">{money(finalQuote)}</span></div>
+                <div className="flex justify-between border-t pt-1.5 mb-2"><span className="font-semibold">Estimated Professional Fee:</span><span className="font-bold text-blue-600">{money(finalQuote)}</span></div>
                 
                 {/* VALUE HIGHLIGHT */}
                 <div className="bg-green-50 border-2 border-green-500 rounded p-2 mt-2">
-                  <div className="text-[9px] font-bold text-green-800 mb-1">💰 YOUR TAX BENEFIT</div>
-                  <div className="text-xs font-semibold text-gray-700">Year 1 Bonus Depreciation:</div>
+                  <div className="text-[9px] font-bold text-green-800 mb-1">💰 ESTIMATED TAX IMPACT (ILLUSTRATIVE)</div>
+                  <div className="text-xs font-semibold text-gray-700">Illustrative Year-1 Accelerated Depreciation:</div>
                   <div className="text-2xl font-bold text-green-700">{schedule.length > 0 ? money(schedule[0].bonus_dep) : "$0"}</div>
                   <div className="text-[8px] text-gray-600 mt-1">vs. {schedule.length > 0 ? money(schedule[0].std_dep) : "$0"} standard</div>
                 </div>
@@ -1037,11 +1102,11 @@ function PDFDisplay({ result, form }) {
               </div>
               <div>
                 <div className="font-bold text-green-700">✓ IRS-Compliant</div>
-                <p className="text-gray-700">Engineered study</p>
+                <p className="text-gray-700">Engineered methodology</p>
               </div>
               <div>
-                <div className="font-bold text-green-700">✓ Guaranteed</div>
-                <p className="text-gray-700">Full audit support</p>
+                <div className="font-bold text-green-700">✓ Audit Support</div>
+                <p className="text-gray-700">Documentation assistance</p>
               </div>
             </div>
           </div>
@@ -1056,7 +1121,7 @@ function PDFDisplay({ result, form }) {
               <h2 className="text-base font-bold">
                 {result.property_label ? `${result.property_label} Depreciation Schedule` : `${form.property_type} Depreciation Schedule`}
               </h2>
-              <p className="text-[10px] text-gray-300">Comparison: Your Current vs. Our Service</p>
+              <p className="text-[10px] text-gray-300">Illustrative Comparison Based on Standard Assumptions</p>
             </div>
 
             <div className="overflow-x-auto">
@@ -1066,7 +1131,7 @@ function PDFDisplay({ result, form }) {
                     <th className="px-2 py-1 text-left font-bold">Year</th>
                     <th className="px-2 py-1 text-right font-bold text-gray-500">Std. Depreciation<br/><span className="text-[8px] font-normal">(What you have now)</span></th>
                     <th className="px-2 py-1 text-right font-bold text-blue-700">Traditional<br/>Cost Seg</th>
-                    <th className="px-2 py-1 text-right font-bold bg-green-50 text-green-700">★ Bonus<br/>Depreciation</th>
+                    <th className="px-2 py-1 text-right font-bold bg-green-50 text-green-700">★ Accelerated<br/>Depreciation</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1093,8 +1158,8 @@ function PDFDisplay({ result, form }) {
           {/* VALUE CALLOUT */}
           <div className="bg-gradient-to-r from-green-100 to-green-50 border-2 border-green-500 rounded-lg p-3 mt-3">
             <div className="text-center">
-              <div className="text-xs font-bold text-green-800 mb-1">★ RECOMMENDED: BONUS DEPRECIATION ★</div>
-              <div className="text-sm text-gray-700">Maximize your first-year deduction and accelerate tax savings</div>
+              <div className="text-xs font-bold text-green-800 mb-1">★ RECOMMENDED: ACCELERATED DEPRECIATION ★</div>
+              <div className="text-sm text-gray-700">Potentially increase your first-year deduction and accelerate tax savings</div>
               <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
                 <div className="bg-white rounded p-2">
                   <div className="text-gray-600">Standard (Current)</div>
@@ -1105,7 +1170,7 @@ function PDFDisplay({ result, form }) {
                   <div className="font-bold text-blue-800">{schedule.length > 0 ? money(schedule[0].trad_cost_seg) : "$0"}</div>
                 </div>
                 <div className="bg-green-200 rounded p-2 border-2 border-green-600">
-                  <div className="text-green-800 font-bold">★ Bonus Depreciation</div>
+                  <div className="text-green-800 font-bold">★ Accelerated Depreciation</div>
                   <div className="font-bold text-green-900 text-base">{schedule.length > 0 ? money(schedule[0].bonus_dep) : "$0"}</div>
                 </div>
               </div>
@@ -1115,19 +1180,19 @@ function PDFDisplay({ result, form }) {
           {/* Footer + Print button */}
           <div className="text-center space-y-2 mt-3">
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="no-print text-white font-bold py-2 px-6 rounded-lg shadow-lg transition"
               style={{ backgroundColor: "#558ca5" }}
             >
               Print or Save as PDF
             </button>
-            <p className="text-[10px] text-gray-600">This quote is valid for 30 days from the quote date above</p>
+            <p className="text-[10px] text-gray-600">This estimate is valid for 30 days from the estimate date above. Final pricing subject to engagement review.</p>
           </div>
         </div>
 
         {/* Footer */}
         <div className="bg-gray-100 border-t-2 border-gray-300 p-3 text-center text-[9px] text-gray-600 mt-auto">
-          <p className="font-semibold">Quote Generated: {now.toLocaleDateString()}</p>
+          <p className="font-semibold">Estimate Generated: {now.toLocaleDateString()}</p>
           <p className="mt-0.5 text-red-600 font-semibold">Valid Until: {expires.toLocaleDateString()} (30 days)</p>
           <p className="mt-1 text-gray-500">RCG Valuation • Cost Segregation Specialists</p>
         </div>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os, json
+import os, json, uuid
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -25,6 +25,10 @@ from cost_seg_calculator import CostSegregationCalculator
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# -------- NOTIFICATIONS --------
+from . import sms_notifications
+from . import email_notifications
 
 
 def round_to_pennies(value: float) -> float:
@@ -554,10 +558,12 @@ def quote_document(
                 "bonus_dep": round_to_pennies(bonus_dep)
             })
 
-        # Calculate totals from schedule (single source of truth)
-        total_cost_seg = sum(s["cost_seg_est"] for s in schedule)
-        total_std_dep = sum(s["std_dep"] for s in schedule)
-        total_trad = sum(s["trad_cost_seg"] for s in schedule)
+        # Calculate totals using lifetime_totals (correctly accounts for years elapsed)
+        # This ensures totals represent REMAINING basis when years_elapsed > 0
+        lt = calc.lifetime_totals(from_css_year=True)
+        total_cost_seg = float(lt['bonus'])
+        total_std_dep = float(lt['standard'])
+        total_trad = float(lt['traditional'])
 
         logger.info(f"Schedule Generated: {len(schedule)} years (engine-backed)")
         logger.info(f"Total Cost Seg: ${total_cost_seg:,.2f}")
@@ -728,6 +734,36 @@ def quote_document(
         f"years_elapsed={depreciation_481a['years_elapsed'] if depreciation_481a else 'N/A'} "
         f"481a_catch_up={depreciation_481a['481a_catch_up'] if depreciation_481a else 0:.2f}"
     )
+
+    # Send notifications when quote is computed (if contact info provided)
+    if inp.name or inp.email or inp.phone:
+        from datetime import datetime as dt
+
+        # Prepare quote data for notifications
+        quote_data = {
+            "id": f"quote_{int(dt.now().timestamp())}",
+            "name": inp.name or "Unknown",
+            "email": inp.email or "N/A",
+            "phone": inp.phone or "N/A",
+            "address": getattr(inp, 'address', 'N/A'),
+            "purchase_price": inp.purchase_price,
+            "property_type": inp.property_type or "N/A",
+            "submitted_at": dt.now().isoformat()
+        }
+
+        # Send SMS notification
+        try:
+            sms_result = sms_notifications.notify_quote_submission(quote_data)
+            logger.info(f"SMS notification result: {sms_result}")
+        except Exception as e:
+            logger.error(f"Failed to send SMS notification: {e}")
+
+        # Send email notification
+        try:
+            email_result = email_notifications.notify_quote_submission(quote_data)
+            logger.info(f"Email notification result: {email_result}")
+        except Exception as e:
+            logger.error(f"Failed to send email notification: {e}")
 
     # Add depreciation period to property label
     dep_period = "27.5yr" if css_property_type == "multi-family" else "39yr"
@@ -901,7 +937,7 @@ Workflow:
 
 Required Fields for Quote:
 - purchase_price (dollar amount)
-- zip_code (5-digit ZIP code)
+- zip_code (5-digit ZIP code - MUST be extracted from address and set separately)
 - land_value (percentage or dollar amount)
 - known_land_value (true if dollar amount, false if percentage)
 
@@ -931,6 +967,8 @@ Rules:
 - Validate: zip_code (00000-99999), land percent (0-100 or 0-1)
 - Always be encouraging and positive
 - When user says "submit" or "send", use quote_submit_request tool
+- CRITICAL: When collecting address, ALWAYS extract the 5-digit ZIP code and call quote_set_inputs with the zip_code parameter
+- Example: If user says "123 Main St, Phoenix, AZ 85001", you MUST call quote_set_inputs with zip_code=85001
 """
 
 class ChatRequest(BaseModel):
@@ -946,9 +984,31 @@ def _tool_quote_compute(args: Dict[str, Any]) -> Dict[str, Any]:
     Agent tool for computing quotes - uses NEW Python calculator
     """
     payload = {**CURRENT_DRAFT, **(args or {})}
-    qi = QuoteInputs(**payload)
-    base, final, breakdown = compute_with_new_calculator(qi)
-    return {"base_quote": base, "final_quote": final, "parts": breakdown, "action": "compute"}
+
+    # Validate required fields before attempting to create QuoteInputs
+    required_fields = ["purchase_price", "zip_code", "land_value"]
+    missing_fields = [field for field in required_fields if field not in payload or payload[field] is None]
+
+    if missing_fields:
+        return {
+            "error": f"Missing required fields: {', '.join(missing_fields)}",
+            "missing_fields": missing_fields,
+            "message": f"Please collect the following information before computing the quote: {', '.join(missing_fields)}"
+        }
+
+    # Ensure known_land_value is set (defaults to False if not provided)
+    if "known_land_value" not in payload:
+        payload["known_land_value"] = False
+
+    try:
+        qi = QuoteInputs(**payload)
+        base, final, breakdown = compute_with_new_calculator(qi)
+        return {"base_quote": base, "final_quote": final, "parts": breakdown, "action": "compute"}
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": f"Failed to compute quote: {str(e)}"
+        }
 
 def _tool_quote_submit_request(args: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -1079,6 +1139,51 @@ def healthz():
     """Simple health check endpoint for Vercel and other monitoring"""
     return {"status": "ok", "version": "2.1.0"}
 
+# -------- GPT Action: Start Quote --------
+class StartQuoteRequest(BaseModel):
+    """Request model for GPT Action to initiate quote flow"""
+    property_type: str
+    year_built: int
+    square_feet: int
+    purchase_price: float
+    purchase_date: str
+    land_value_pct: float
+    tax_year: int
+
+@app.post("/start-quote")
+def start_quote(payload: StartQuoteRequest):
+    """
+    GPT Action endpoint to start a quote session.
+
+    This endpoint:
+    1. Generates a unique session ID
+    2. (Optional) Saves the inputs to database
+    3. Returns a redirect URL to the main quote application
+
+    The GPT will present this URL to the user to continue the quote process.
+    """
+    try:
+        # Generate unique session ID
+        session_id = str(uuid.uuid4())
+
+        logger.info(f"GPT Action: Starting quote session {session_id}")
+        logger.info(f"Input data: {payload.model_dump()}")
+
+        # TODO: Optional - Save inputs to database for later retrieval
+        # This would allow pre-filling the form when user lands on the page
+        # await save_quote_session(session_id, payload.model_dump())
+
+        # Generate redirect URL to the quote application
+        redirect_url = f"https://whatiscostsegregation.us/quote?session={session_id}"
+
+        return {
+            "redirect_url": redirect_url,
+            "session_id": session_id
+        }
+    except Exception as e:
+        logger.error(f"Error in start_quote: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unable to start quote: {str(e)}")
+
 # -------- ElevenLabs Conversational AI Webhooks --------
 # Session storage for ElevenLabs conversations
 ELEVENLABS_SESSIONS: Dict[str, Dict[str, Any]] = {}
@@ -1174,6 +1279,18 @@ def elevenlabs_set_inputs(req: ElevenLabsSetInputs):
             ELEVENLABS_SESSIONS[session_id][field] = value
             updates[field] = value
 
+    # AUTO-EXTRACT ZIP CODE from address if provided and zip_code not already set
+    import re
+    if "address" in updates and "zip_code" not in ELEVENLABS_SESSIONS[session_id]:
+        address = str(updates["address"])
+        # Look for 5-digit ZIP code in address
+        zip_match = re.search(r'\b(\d{5})\b', address)
+        if zip_match:
+            extracted_zip = int(zip_match.group(1))
+            ELEVENLABS_SESSIONS[session_id]["zip_code"] = extracted_zip
+            updates["zip_code"] = extracted_zip
+            logger.info(f"Auto-extracted ZIP code {extracted_zip} from address: {address}")
+
     # Check if we have minimum required fields for computation
     session_data = ELEVENLABS_SESSIONS[session_id]
     required_fields = ["purchase_price", "zip_code", "land_value", "land_mode"]
@@ -1223,7 +1340,11 @@ def elevenlabs_update_field(req: ElevenLabsUpdateField):
     field_value = req.field_value
 
     # Type conversions
-    if field_name in ["purchase_price", "land_value"]:
+    if field_name in ["purchase_price", "land_value", "capex_amount", "pad_deferred_growth"]:
+        field_value = float(field_value)
+    elif field_name in ["zip_code", "tax_year", "year_built", "floors", "multiple_properties"]:
+        field_value = int(field_value)
+    elif field_name in ["sqft_building", "acres_land"]:
         field_value = float(field_value)
     elif field_name == "known_land_value":
         field_value = field_value.lower() in ["true", "1", "yes"]
@@ -1286,6 +1407,78 @@ def elevenlabs_compute_quote(req: ElevenLabsComputeQuote):
             "message": f"Failed to compute quote: {str(e)}"
         }
 
+@app.post("/elevenlabs/compute_quote_from_session")
+def elevenlabs_compute_quote_from_session(session_id: str = "default"):
+    """
+    ElevenLabs webhook: Compute quote from session data
+    Simpler endpoint - just pass session_id, pulls all data from session
+    """
+    # Get session data
+    if session_id not in ELEVENLABS_SESSIONS:
+        return {
+            "success": False,
+            "error": "Session not found",
+            "message": "No session data found. Please provide property information first."
+        }
+
+    session_data = ELEVENLABS_SESSIONS[session_id]
+
+    # Required fields
+    required_fields = ["purchase_price", "zip_code", "land_value"]
+    missing = [f for f in required_fields if f not in session_data or session_data[f] is None]
+
+    if missing:
+        return {
+            "success": False,
+            "error": f"Missing required fields: {', '.join(missing)}",
+            "missing_fields": missing,
+            "message": f"Please provide: {', '.join(missing)}"
+        }
+
+    try:
+        # Convert land_mode to known_land_value
+        land_mode = session_data.get("land_mode", "percent")
+        known_land_value = (land_mode == "dollars")
+
+        # Build quote inputs from session
+        qi = QuoteInputs(
+            purchase_price=float(session_data["purchase_price"]),
+            zip_code=int(session_data["zip_code"]),
+            land_value=float(session_data["land_value"]),
+            known_land_value=known_land_value,
+            property_type=session_data.get("property_type", "Multi-Family"),
+            rush=session_data.get("rush", "No Rush"),
+            premium=session_data.get("premium", "No"),
+            referral=session_data.get("referral", "No")
+        )
+
+        # Compute quote
+        base, final, breakdown = compute_with_new_calculator(qi)
+
+        # Store results in session
+        ELEVENLABS_SESSIONS[session_id]["base_quote"] = base
+        ELEVENLABS_SESSIONS[session_id]["final_quote"] = final
+        ELEVENLABS_SESSIONS[session_id]["quote_computed"] = True
+        ELEVENLABS_SESSIONS[session_id]["breakdown"] = breakdown
+
+        logger.info(f"Quote computed from session {session_id}: Base=${base:,.2f}, Final=${final:,.2f}")
+
+        return {
+            "success": True,
+            "base_quote": base,
+            "final_quote": final,
+            "breakdown": breakdown,
+            "message": f"Quote computed: Base ${base:,.2f}, Final ${final:,.2f}"
+        }
+
+    except Exception as e:
+        logger.error(f"Error computing quote from session {session_id}: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Failed to compute quote: {str(e)}"
+        }
+
 @app.post("/elevenlabs/submit_quote")
 def elevenlabs_submit_quote(req: ElevenLabsSubmitQuote):
     """
@@ -1320,9 +1513,27 @@ def elevenlabs_submit_quote(req: ElevenLabsSubmitQuote):
     ELEVENLABS_SESSIONS[session_id]["quote_submitted"] = True
     ELEVENLABS_SESSIONS[session_id]["submitted_at"] = datetime.now().isoformat()
 
-    # TODO: Send to Supabase or email notification
-    # For now, just log it
+    # Send SMS notification to team
     logger.info(f"Quote submitted for session {session_id}: {session_data}")
+
+    # Prepare quote data for SMS notification
+    quote_data = {
+        "id": session_id,
+        "name": session_data.get("name", "Unknown"),
+        "email": session_data.get("email", "N/A"),
+        "phone": session_data.get("phone", "N/A"),
+        "address": session_data.get("address", "N/A"),
+        "purchase_price": session_data.get("purchase_price", 0),
+        "property_type": session_data.get("property_type", "N/A"),
+        "submitted_at": ELEVENLABS_SESSIONS[session_id]["submitted_at"]
+    }
+
+    sms_result = sms_notifications.notify_quote_submission(quote_data)
+    logger.info(f"SMS notification result: {sms_result}")
+
+    # Send email notification to team
+    email_result = email_notifications.notify_quote_submission(quote_data)
+    logger.info(f"Email notification result: {email_result}")
 
     return {
         "success": True,
@@ -1360,9 +1571,22 @@ def elevenlabs_send_pdf(req: ElevenLabsSendPDF):
     ELEVENLABS_SESSIONS[session_id]["pdf_sent_to"] = req.email
     ELEVENLABS_SESSIONS[session_id]["pdf_sent_at"] = datetime.now().isoformat()
 
-    # TODO: Actually generate and send PDF
-    # For now, just log it
+    # Send SMS notification to team
     logger.info(f"PDF requested for session {session_id} to {req.email}: {session_data}")
+
+    # Prepare PDF request data for SMS notification
+    pdf_data = {
+        "email": req.email,
+        "name": session_data.get("name", "Unknown"),
+        "requested_at": ELEVENLABS_SESSIONS[session_id]["pdf_sent_at"]
+    }
+
+    sms_result = sms_notifications.notify_pdf_request(pdf_data)
+    logger.info(f"SMS notification result: {sms_result}")
+
+    # Send email notification to team
+    email_result = email_notifications.notify_pdf_request(pdf_data)
+    logger.info(f"Email notification result: {email_result}")
 
     return {
         "success": True,
@@ -1402,9 +1626,23 @@ def elevenlabs_request_callback(req: ElevenLabsRequestCallback):
     ELEVENLABS_SESSIONS[session_id]["callback_name"] = req.name
     ELEVENLABS_SESSIONS[session_id]["callback_requested_at"] = datetime.now().isoformat()
 
-    # TODO: Send notification to RGV team (email, Slack, etc.)
-    # For now, just log it
+    # Send SMS notification to team
     logger.info(f"Callback requested for session {session_id} - {req.name} at {req.phone}: {session_data}")
+
+    # Prepare callback request data for SMS notification
+    callback_data = {
+        "name": req.name or "Unknown",
+        "phone": req.phone,
+        "address": session_data.get("address", "N/A"),
+        "requested_at": ELEVENLABS_SESSIONS[session_id]["callback_requested_at"]
+    }
+
+    sms_result = sms_notifications.notify_callback_request(callback_data)
+    logger.info(f"SMS notification result: {sms_result}")
+
+    # Send email notification to team
+    email_result = email_notifications.notify_callback_request(callback_data)
+    logger.info(f"Email notification result: {email_result}")
 
     return {
         "success": True,

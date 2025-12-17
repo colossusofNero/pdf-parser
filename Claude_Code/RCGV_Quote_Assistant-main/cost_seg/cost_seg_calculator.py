@@ -265,9 +265,14 @@ class CostSegregationCalculator:
                     '27.5yr': 0.00000000,
                     '39yr': 0.63573334,    # 63.57333400% (adjusted for exact 100%)
                 }
-            # Use base allocations directly (Excel percentages are already final)
-            # Age adjustments are already baked into the Excel-matched percentages
-            self.allocations = base_allocations
+            # Apply age adjustments based on year_built
+            # Older properties get more allocation to short-life assets (15yr)
+            self.allocations = calculate_allocation_percentages(
+                property_type,
+                self.year_built,
+                self.css_date.year,
+                base_allocations
+            )
         
         # Calculate allocated amounts
         # Remap building class keys for ADS (27.5yr→30yr, 39yr→40yr)

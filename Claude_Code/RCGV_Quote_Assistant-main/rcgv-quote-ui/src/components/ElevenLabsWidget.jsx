@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const agentId = import.meta.env.VITE_ELEVENLABS_AGENT_ID;
 
 export default function ElevenLabsWidget({ form, setForm, sessionId }) {
-  const [lastUpdate, setLastUpdate] = useState({});
+  const lastUpdateRef = useRef({});
 
   // Debug logging
   console.log('🔍 ElevenLabs Widget Debug:', {
@@ -58,19 +58,29 @@ export default function ElevenLabsWidget({ form, setForm, sessionId }) {
           // Update form with any new fields from the conversation
           const updates = data.data;
 
-          // Highlight fields that just changed
+          // Collect changed fields for batch processing
+          const changedFields = [];
           Object.keys(updates).forEach(key => {
-            if (updates[key] !== lastUpdate[key] && updates[key] !== null && updates[key] !== undefined) {
-              // Flash the field
-              const field = document.querySelector(`input[name="${key}"], select[name="${key}"], textarea[name="${key}"]`);
-              if (field) {
-                field.classList.add('field-updated');
-                setTimeout(() => field.classList.remove('field-updated'), 2000);
-              }
+            if (updates[key] !== lastUpdateRef.current[key] && updates[key] !== null && updates[key] !== undefined) {
+              changedFields.push(key);
             }
           });
 
-          setLastUpdate(updates);
+          // Update ref immediately
+          lastUpdateRef.current = updates;
+
+          // Defer DOM operations to prevent blocking the main thread
+          if (changedFields.length > 0) {
+            requestAnimationFrame(() => {
+              changedFields.forEach(key => {
+                const field = document.querySelector(`input[name="${key}"], select[name="${key}"], textarea[name="${key}"]`);
+                if (field) {
+                  field.classList.add('field-updated');
+                  setTimeout(() => field.classList.remove('field-updated'), 2000);
+                }
+              });
+            });
+          }
 
           // Update form state - only update fields that have values
           const validUpdates = Object.fromEntries(
@@ -97,7 +107,7 @@ export default function ElevenLabsWidget({ form, setForm, sessionId }) {
     }, 2000);
 
     return () => clearInterval(pollInterval);
-  }, [sessionId, lastUpdate, setForm, apiBase]);
+  }, [sessionId, setForm, apiBase]);
 
   if (!agentId) {
     return null; // Don't show anything if no agent ID
@@ -136,6 +146,16 @@ export default function ElevenLabsWidget({ form, setForm, sessionId }) {
           bottom: 2rem !important;
           right: 2rem !important;
           z-index: 9999 !important;
+        }
+
+        /* Hide ElevenLabs widget when printing */
+        @media print {
+          elevenlabs-convai,
+          [id*="elevenlabs"],
+          [class*="elevenlabs"] {
+            display: none !important;
+            visibility: hidden !important;
+          }
         }
       `}</style>
     </>
