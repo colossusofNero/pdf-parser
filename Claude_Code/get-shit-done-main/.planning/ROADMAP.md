@@ -1,5 +1,14 @@
 # Roadmap: GSD Brownfield Support
 
+## Milestones
+
+### v1.4.0 - Brownfield Support ✅ Complete
+**Completed:** 2026-01-13 | **Phases:** 9 | **Plans:** 16
+Full brownfield support with codebase mapping, intelligent context assembly, TDD, and UAT workflows.
+→ See [v1.4-brownfield-support.md](milestones/v1.4-brownfield-support.md)
+
+---
+
 ## Overview
 
 Add comprehensive brownfield support to GSD. Users adopting GSD for existing codebases will have a systematic way to capture architectural knowledge before planning begins. A new `/gsd:map-codebase` workflow will produce structured `.planning/codebase/` documents that stay current as plans execute.
