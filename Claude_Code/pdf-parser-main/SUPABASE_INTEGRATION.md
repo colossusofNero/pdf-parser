@@ -95,3 +95,4 @@ App.tsx (handleSubmitToGoogleSheets)
 ```
 
 Both submissions happen in parallel with independent error handling.
+
